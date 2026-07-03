@@ -30,6 +30,29 @@ function HomePage() {
     }
   }
 
+  async function testInvalidRange() {
+  try {
+    setIsLoading(true);
+    setError("");
+
+    const response = await fetch(
+      "http://localhost:5000/api/dashboard?range=random"
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message);
+    }
+
+    const data = await response.json();
+    setDashboardCards(data.cards);
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+  }
+}
+
   useEffect(() => {
     async function loadInitialDashboardData() {
       try {
@@ -62,6 +85,7 @@ function HomePage() {
         <p>Welcome to our full-stack React dashboard.</p>
 
         <button onClick={fetchDashboardData}>Refresh Data</button>
+        <button onClick={testInvalidRange}>Test Invalid Range</button>
 
         <select
           value={selectedRange}
