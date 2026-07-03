@@ -1,0 +1,33 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #f5f7fb;
+  color: #1f2937;
+}
+
+main {
+  min-height: 100vh;
+  padding: 40px;
+}
+
+section {
+  margin-top: 32px;
+}
+
+section > div {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+section > div > div {
+  background-color: white;
+  padding: 24px;
+  border-radius: 12px;
+  min-width: 220px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
