@@ -6,13 +6,16 @@ function HomePage() {
   const [dashboardCards, setDashboardCards] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedRange, setSelectedRange] = useState("today");
 
   async function fetchDashboardData() {
     try {
       setIsLoading(true);
       setError("");
 
-      const response = await fetch("http://localhost:5000/api/dashboard");
+      const response = await fetch(
+        `http://localhost:5000/api/dashboard?range=${selectedRange}`
+      );
 
       if (!response.ok) {
         throw new Error("Failed to fetch dashboard data");
@@ -30,7 +33,9 @@ function HomePage() {
   useEffect(() => {
     async function loadInitialDashboardData() {
       try {
-        const response = await fetch("http://localhost:5000/api/dashboard");
+        const response = await fetch(
+          "http://localhost:5000/api/dashboard?range=today"
+        );
 
         if (!response.ok) {
           throw new Error("Failed to fetch dashboard data");
@@ -57,6 +62,15 @@ function HomePage() {
         <p>Welcome to our full-stack React dashboard.</p>
 
         <button onClick={fetchDashboardData}>Refresh Data</button>
+
+        <select
+          value={selectedRange}
+          onChange={(event) => setSelectedRange(event.target.value)}
+        >
+          <option value="today">Today</option>
+          <option value="week">Week</option>
+          <option value="month">Month</option>
+        </select>
 
         <section>
           <h2>Overview</h2>
