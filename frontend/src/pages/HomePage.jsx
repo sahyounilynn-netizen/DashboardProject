@@ -1,21 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import DashboardCard from "../components/DashboardCard";
 
 function HomePage() {
-  const [dashboardCards, setDashboardCards] = useState([
-    { title: "Total Users", value: "1,240" },
-    { title: "Total Tasks", value: "18" },
-    { title: "Pending Requests", value: "6" },
-  ]);
+  const [dashboardCards, setDashboardCards] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  function handleRefreshData() {
-    setDashboardCards([
-      { title: "Total Users", value: "1,315" },
-      { title: "Total Tasks", value: "22" },
-      { title: "Pending Requests", value: "4" },
-    ]);
+  async function fetchDashboardData() {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await fetch("http://localhost:5000/api/dashboard");
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch dashboard data");
+      }
+
+      const data = await response.json();
+      setDashboardCards(data.cards);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   }
+
+  useEffect(() => {
+    async function loadInitialDashboardData() {
+      try {
+        const response = await fetch("http://localhost:5000/api/dashboard");
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch dashboard data");
+        }
+
+        const data = await response.json();
+        setDashboardCards(data.cards);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadInitialDashboardData();
+  }, []);
 
   return (
     <div className="dashboard-layout">
@@ -25,20 +56,26 @@ function HomePage() {
         <h1>Dashboard Project</h1>
         <p>Welcome to our full-stack React dashboard.</p>
 
-        <button onClick={handleRefreshData}>Refresh Data</button>
+        <button onClick={fetchDashboardData}>Refresh Data</button>
 
         <section>
           <h2>Overview</h2>
 
-          <div className="cards-grid">
-            {dashboardCards.map((card) => (
-              <DashboardCard
-                key={card.title}
-                title={card.title}
-                value={card.value}
-              />
-            ))}
-          </div>
+          {isLoading && <p>Loading dashboard data...</p>}
+
+          {error && <p>{error}</p>}
+
+          {!isLoading && !error && (
+            <div className="cards-grid">
+              {dashboardCards.map((card) => (
+                <DashboardCard
+                  key={card.title}
+                  title={card.title}
+                  value={card.value}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </main>
     </div>
