@@ -1,28 +1,23 @@
 import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import DashboardCard from "../components/DashboardCard";
+import TaskForm from "../components/TaskForm";
+import { getDashboardData, getTasks, createTask } from "../services/api";
 
 function HomePage() {
   const [dashboardCards, setDashboardCards] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedRange, setSelectedRange] = useState("today");
+  const [tasks, setTasks] = useState([]);
 
   async function fetchDashboardData() {
     try {
       setIsLoading(true);
       setError("");
 
-      const response = await fetch(
-        `http://localhost:5000/api/dashboard?range=${selectedRange}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch dashboard data");
-      }
-
-      const data = await response.json();
-      setDashboardCards(data.cards);
+      const cards = await getDashboardData(selectedRange);
+      setDashboardCards(cards);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -31,41 +26,39 @@ function HomePage() {
   }
 
   async function testInvalidRange() {
-  try {
-    setIsLoading(true);
-    setError("");
+    try {
+      setIsLoading(true);
+      setError("");
 
-    const response = await fetch(
-      "http://localhost:5000/api/dashboard?range=random"
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message);
+      const cards = await getDashboardData("random");
+      setDashboardCards(cards);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
-
-    const data = await response.json();
-    setDashboardCards(data.cards);
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setIsLoading(false);
   }
-}
+
+  async function handleTaskCreated(taskData) {
+    try {
+      setError("");
+
+      const newTask = await createTask(taskData);
+
+      setTasks((currentTasks) => [...currentTasks, newTask]);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   useEffect(() => {
-    async function loadInitialDashboardData() {
+    async function loadInitialData() {
       try {
-        const response = await fetch(
-          "http://localhost:5000/api/dashboard?range=today"
-        );
+        const cards = await getDashboardData("today");
+        const savedTasks = await getTasks();
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch dashboard data");
-        }
-
-        const data = await response.json();
-        setDashboardCards(data.cards);
+        setDashboardCards(cards);
+        setTasks(savedTasks);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -73,7 +66,7 @@ function HomePage() {
       }
     }
 
-    loadInitialDashboardData();
+    loadInitialData();
   }, []);
 
   return (
@@ -114,6 +107,22 @@ function HomePage() {
               ))}
             </div>
           )}
+        </section>
+
+        <TaskForm onTaskCreated={handleTaskCreated} />
+
+        <section>
+          <h2>Tasks</h2>
+
+          {tasks.length === 0 && <p>No tasks added yet.</p>}
+
+          {tasks.map((task) => (
+            <div key={task.id}>
+              <h3>{task.title}</h3>
+              <p>Priority: {task.priority}</p>
+              <p>Status: {task.status}</p>
+            </div>
+          ))}
         </section>
       </main>
     </div>

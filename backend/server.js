@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const taskRoutes = require("./routes/taskRoutes");
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/tasks", taskRoutes);
 
 const PORT = process.env.PORT || 5000;
 
