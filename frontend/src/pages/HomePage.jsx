@@ -1,22 +1,26 @@
+import Sidebar from "../components/Sidebar";
 import DashboardCard from "../components/DashboardCard";
+
 function HomePage() {
   return (
-    <main>
-      <h1>Dashboard Project</h1>
-      <p>Welcome to our full-stack React dashboard.</p>
+    <div className="dashboard-layout">
+      <Sidebar />
 
-      <section>
-        <h2>Overview</h2>
+      <main className="dashboard-main">
+        <h1>Dashboard Project</h1>
+        <p>Welcome to our full-stack React dashboard.</p>
 
-        <div>
-          <div>
-  <DashboardCard title="Total Users" value="1,240" />
-  <DashboardCard title="Total Tasks" value="18" />
-  <DashboardCard title="Pending Requests" value="6" />
-</div>
-        </div>
-      </section>
-    </main>
+        <section>
+          <h2>Overview</h2>
+
+          <div className="cards-grid">
+            <DashboardCard title="Total Users" value="1,240" />
+            <DashboardCard title="Total Tasks" value="18" />
+            <DashboardCard title="Pending Requests" value="6" />
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
