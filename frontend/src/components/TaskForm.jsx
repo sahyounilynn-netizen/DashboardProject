@@ -4,32 +4,44 @@ function TaskForm({ onTaskCreated }) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [status, setStatus] = useState("Pending");
+  const [formError, setFormError] = useState("");
+  
+function handleSubmit(event) {
+  event.preventDefault();
 
-  function handleSubmit(event) {
-    event.preventDefault();
-
-    const taskData = {
-      title: title,
-      priority: priority,
-      status: status,
-    };
-
-    onTaskCreated(taskData);
-
-    setTitle("");
-    setPriority("Medium");
-    setStatus("Pending");
+  if (title.trim() === "") {
+    setFormError("Task title is required.");
+    return;
   }
+
+  setFormError("");
+
+  const taskData = {
+    title: title,
+    priority: priority,
+    status: status,
+  };
+
+  onTaskCreated(taskData);
+
+  setTitle("");
+  setPriority("Medium");
+  setStatus("Pending");
+}
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Add Task</h2>
+      {formError && <p>{formError}</p>}
 
       <input
         type="text"
         placeholder="Task title"
         value={title}
-        onChange={(event) => setTitle(event.target.value)}
+       onChange={(event) => {
+        setTitle(event.target.value);
+        setFormError("");
+}}
       />
 
       <select
