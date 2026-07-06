@@ -1,4 +1,4 @@
-const { createTask, getTasks } = require("../services/taskService");
+const { createTask, getTasks, deleteTask } = require("../services/taskService");
 
 function addTask(req, res) {
   const newTask = createTask(req.body);
@@ -16,8 +16,25 @@ function listTasks(req, res) {
     tasks: tasks,
   });
 }
+function removeTask(req, res) {
+  const taskId = Number(req.params.id);
+
+  const deletedTask = deleteTask(taskId);
+
+  if (!deletedTask) {
+    return res.status(404).json({
+      message: "Task not found.",
+    });
+  }
+
+  res.json({
+    message: "Task deleted successfully",
+    task: deletedTask,
+  });
+}
 
 module.exports = {
   addTask,
   listTasks,
+  removeTask,
 };

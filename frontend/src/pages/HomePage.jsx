@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import DashboardCard from "../components/DashboardCard";
 import TaskForm from "../components/TaskForm";
-import { getDashboardData, getTasks, createTask } from "../services/api";
+import {
+  getDashboardData,
+  getTasks,
+  createTask,
+  deleteTask,
+} from "../services/api";
 
 function HomePage() {
   const [dashboardCards, setDashboardCards] = useState([]);
@@ -50,7 +55,19 @@ function HomePage() {
       setError(err.message);
     }
   }
+async function handleDeleteTask(taskId) {
+  try {
+    setError("");
 
+    await deleteTask(taskId);
+
+    setTasks((currentTasks) =>
+      currentTasks.filter((task) => task.id !== taskId)
+    );
+  } catch (err) {
+    setError(err.message);
+  }
+}
   useEffect(() => {
     async function loadInitialData() {
       try {
@@ -116,13 +133,17 @@ function HomePage() {
 
           {tasks.length === 0 && <p>No tasks added yet.</p>}
 
-          {tasks.map((task) => (
-            <div key={task.id}>
-              <h3>{task.title}</h3>
-              <p>Priority: {task.priority}</p>
-              <p>Status: {task.status}</p>
-            </div>
-          ))}
+        {tasks.map((task) => (
+  <div key={task.id}>
+    <h3>{task.title}</h3>
+    <p>Priority: {task.priority}</p>
+    <p>Status: {task.status}</p>
+
+    <button onClick={() => handleDeleteTask(task.id)}>
+      Delete
+    </button>
+  </div>
+))}
         </section>
       </main>
     </div>

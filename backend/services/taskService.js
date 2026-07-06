@@ -17,8 +17,20 @@ function createTask(taskData) {
 function getTasks() {
   return tasks;
 }
+function deleteTask(taskId) {
+  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+
+  if (taskIndex === -1) {
+    return null;
+  }
+
+  const deletedTask = tasks.splice(taskIndex, 1);
+
+  return deletedTask[0];
+}
 
 module.exports = {
   createTask,
   getTasks,
+  deleteTask,
 };

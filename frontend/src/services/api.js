@@ -40,3 +40,16 @@ export async function createTask(taskData) {
   const data = await response.json();
   return data.task;
 }
+export async function deleteTask(taskId) {
+  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to delete task");
+  }
+
+  const data = await response.json();
+  return data.task;
+}
