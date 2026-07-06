@@ -7,6 +7,7 @@ import {
   getTasks,
   createTask,
   deleteTask,
+  updateTaskStatus,
 } from "../services/api";
 
 function HomePage() {
@@ -63,6 +64,21 @@ async function handleDeleteTask(taskId) {
 
     setTasks((currentTasks) =>
       currentTasks.filter((task) => task.id !== taskId)
+    );
+  } catch (err) {
+    setError(err.message);
+  }
+}
+async function handleStatusChange(taskId, newStatus) {
+  try {
+    setError("");
+
+    const updatedTask = await updateTaskStatus(taskId, newStatus);
+
+    setTasks((currentTasks) =>
+      currentTasks.map((task) =>
+        task.id === taskId ? updatedTask : task
+      )
     );
   } catch (err) {
     setError(err.message);
@@ -133,11 +149,22 @@ async function handleDeleteTask(taskId) {
 
           {tasks.length === 0 && <p>No tasks added yet.</p>}
 
-        {tasks.map((task) => (
+      {tasks.map((task) => (
   <div key={task.id}>
     <h3>{task.title}</h3>
     <p>Priority: {task.priority}</p>
-    <p>Status: {task.status}</p>
+
+    <label>Status: </label>
+    <select
+      value={task.status}
+      onChange={(event) =>
+        handleStatusChange(task.id, event.target.value)
+      }
+    >
+      <option value="Pending">Pending</option>
+      <option value="In Progress">In Progress</option>
+      <option value="Completed">Completed</option>
+    </select>
 
     <button onClick={() => handleDeleteTask(task.id)}>
       Delete

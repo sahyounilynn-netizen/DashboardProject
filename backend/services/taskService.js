@@ -28,9 +28,21 @@ function deleteTask(taskId) {
 
   return deletedTask[0];
 }
+function updateTaskStatus(taskId, newStatus) {
+  const task = tasks.find((task) => task.id === taskId);
+
+  if (!task) {
+    return null;
+  }
+
+  task.status = newStatus;
+
+  return task;
+}
 
 module.exports = {
   createTask,
   getTasks,
   deleteTask,
+  updateTaskStatus,
 };

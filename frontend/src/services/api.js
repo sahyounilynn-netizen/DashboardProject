@@ -53,3 +53,20 @@ export async function deleteTask(taskId) {
   const data = await response.json();
   return data.task;
 }
+export async function updateTaskStatus(taskId, status) {
+  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to update task status");
+  }
+
+  const data = await response.json();
+  return data.task;
+}
