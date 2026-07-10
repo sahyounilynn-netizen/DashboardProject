@@ -119,3 +119,93 @@ export async function updateTaskStatus(taskId, status, userId) {
   const data = await response.json();
   return data.task;
 }
+
+export async function updateTask(taskId, task) {
+  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(task),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to update task");
+  }
+
+  const data = await response.json();
+  return data.task;
+}
+
+export async function getEvents(userId) {
+  const query = new URLSearchParams({
+    userId: String(userId),
+  });
+
+  const response = await fetch(`${API_BASE_URL}/events?${query.toString()}`);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to fetch events");
+  }
+
+  const data = await response.json();
+  return data.events;
+}
+
+export async function createEvent(event) {
+  const response = await fetch(`${API_BASE_URL}/events`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(event),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to create event");
+  }
+
+  const data = await response.json();
+  return data.event;
+}
+
+export async function updateEvent(eventId, event) {
+  const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(event),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to update event");
+  }
+
+  const data = await response.json();
+  return data.event;
+}
+
+export async function deleteEvent(eventId, userId) {
+  const query = new URLSearchParams({
+    userId: String(userId),
+  });
+
+  const response = await fetch(
+    `${API_BASE_URL}/events/${eventId}?${query.toString()}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to delete event");
+  }
+
+  return response.json();
+}

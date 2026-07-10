@@ -6,6 +6,7 @@ const {
   createTask,
   deleteTask,
   updateTaskStatus,
+  updateTask,
 } = require("../services/taskService");
 
 function parseUserId(value) {
@@ -106,6 +107,37 @@ router.patch("/:id/status", async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({
       message: "Failed to update task status",
+      error: error.message,
+    });
+  }
+});
+
+router.patch("/:id", async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const userId = parseUserId(req.body.userId);
+
+    if (userId == null) {
+      const error = new Error("userId is required.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const updatedTask = await updateTask(taskId, req.body, userId);
+
+    if (!updatedTask) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
+
+    res.json({
+      message: "Task updated successfully",
+      task: updatedTask,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      message: "Failed to update task",
       error: error.message,
     });
   }

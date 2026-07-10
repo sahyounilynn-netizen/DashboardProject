@@ -93,9 +93,40 @@ async function updateTaskStatus(taskId, status, userId) {
   return rows[0];
 }
 
+async function updateTask(taskId, taskData, userId) {
+  const { title, description, status, priority, due_date } = taskData;
+
+  const [result] = await db.query(
+    `UPDATE tasks
+     SET title = ?,
+         description = ?,
+         status = ?,
+         priority = ?,
+         due_date = ?
+     WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
+    [
+      title,
+      description || "",
+      status || "pending",
+      priority || "medium",
+      due_date || null,
+      taskId,
+      userId,
+    ]
+  );
+
+  if (result.affectedRows === 0) {
+    return null;
+  }
+
+  const [rows] = await db.query("SELECT * FROM tasks WHERE id = ?", [taskId]);
+  return rows[0];
+}
+
 module.exports = {
   getAllTasks,
   createTask,
   deleteTask,
   updateTaskStatus,
+  updateTask,
 };

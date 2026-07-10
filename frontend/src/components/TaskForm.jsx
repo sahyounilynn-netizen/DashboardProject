@@ -8,6 +8,7 @@ function TaskForm({ onTaskCreated }) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("medium");
   const [status, setStatus] = useState("pending");
+  const [dueDate, setDueDate] = useState("");
   const [formError, setFormError] = useState("");
 
   function handleSubmit(event) {
@@ -24,6 +25,7 @@ function TaskForm({ onTaskCreated }) {
       title,
       priority,
       status,
+      due_date: dueDate || null,
     };
 
     onTaskCreated(taskData);
@@ -31,6 +33,7 @@ function TaskForm({ onTaskCreated }) {
     setTitle("");
     setPriority("medium");
     setStatus("pending");
+    setDueDate("");
   }
 
   return (
@@ -75,6 +78,18 @@ function TaskForm({ onTaskCreated }) {
               </select>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="task-due-date">Deadline</Label>
+              <Input
+                id="task-due-date"
+                onChange={(event) => setDueDate(event.target.value)}
+                type="date"
+                value={dueDate}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-1">
             <div className="space-y-2">
               <Label htmlFor="task-status">Status</Label>
               <select
