@@ -110,6 +110,7 @@ That script adds:
   - optional link to a task
   - start/end dates
   - colors, reminders, and recurrence fields
+  - soft delete support through `events.is_deleted`
 - `task_checklist_items`
   - sub-items inside a task
   - completion state
@@ -181,6 +182,10 @@ Your `tasks` table is still on the older schema. Update it to match step 4.
 ### Calendar or checklist tables are missing
 
 Run [`backend/sql/events-and-checklists.sql`](/C:/Users/User/OneDrive/Desktop/Cv%20and%20Work/coderaas/Dashboard%20Project/backend/sql/events-and-checklists.sql).
+
+### Deleted events still show up
+
+Make sure the `events` table includes `is_deleted BOOLEAN NOT NULL DEFAULT FALSE`, then run the updated events SQL script.
 
 ### Frontend loads but auth or tasks fail
 

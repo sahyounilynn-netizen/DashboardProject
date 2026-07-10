@@ -44,25 +44,55 @@ async function createTask(task) {
 }
 
 async function deleteTask(taskId, userId) {
-  let result;
+  const connection = await db.getConnection();
 
-  if (userId != null) {
-    [result] = await db.query(
-      `UPDATE tasks
-       SET is_deleted = TRUE
-       WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
-      [taskId, userId]
-    );
-  } else {
-    [result] = await db.query(
-      `UPDATE tasks
-       SET is_deleted = TRUE
-       WHERE id = ? AND is_deleted = FALSE`,
-      [taskId]
-    );
+  try {
+    await connection.beginTransaction();
+
+    let result;
+
+    if (userId != null) {
+      [result] = await connection.query(
+        `UPDATE tasks
+         SET is_deleted = TRUE
+         WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
+        [taskId, userId]
+      );
+
+      if (result.affectedRows > 0) {
+        await connection.query(
+          `UPDATE events
+           SET is_deleted = TRUE
+           WHERE task_id = ? AND user_id = ?`,
+          [taskId, userId]
+        );
+      }
+    } else {
+      [result] = await connection.query(
+        `UPDATE tasks
+         SET is_deleted = TRUE
+         WHERE id = ? AND is_deleted = FALSE`,
+        [taskId]
+      );
+
+      if (result.affectedRows > 0) {
+        await connection.query(
+          `UPDATE events
+           SET is_deleted = TRUE
+           WHERE task_id = ?`,
+          [taskId]
+        );
+      }
+    }
+
+    await connection.commit();
+    return result.affectedRows > 0;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
-
-  return result.affectedRows > 0;
 }
 
 async function updateTaskStatus(taskId, status, userId) {

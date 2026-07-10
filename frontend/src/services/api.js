@@ -5,7 +5,7 @@ export async function getDashboardData({ scope, userId }) {
     scope,
   });
 
-  if (scope === "my" && userId) {
+  if (scope === "my" && Number.isInteger(Number(userId)) && Number(userId) > 0) {
     query.set("userId", String(userId));
   }
 

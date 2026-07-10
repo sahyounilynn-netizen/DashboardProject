@@ -109,7 +109,7 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({
-      message: "Event deleted successfully",
+      message: "Event soft deleted successfully",
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({

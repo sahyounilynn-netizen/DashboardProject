@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS events (
   is_all_day BOOLEAN NOT NULL DEFAULT FALSE,
   recurrence_rule VARCHAR(255) NULL,
   reminder_minutes INT NULL,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_events_user
@@ -26,6 +27,9 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX idx_events_user_start ON events(user_id, start_at);
 CREATE INDEX idx_events_task ON events(task_id);
+
+ALTER TABLE events
+ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS task_checklist_items (
   id INT AUTO_INCREMENT PRIMARY KEY,

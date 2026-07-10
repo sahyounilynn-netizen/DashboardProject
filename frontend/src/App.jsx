@@ -5,6 +5,24 @@ import AuthPage from "./pages/AuthPage";
 const USER_STORAGE_KEY = "dashboard-user";
 const THEME_STORAGE_KEY = "dashboard-theme";
 
+function normalizeUser(user) {
+  if (!user || typeof user !== "object") {
+    return null;
+  }
+
+  const rawId = user.id ?? user.userId;
+  const id = Number(rawId);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+
+  return {
+    ...user,
+    id,
+  };
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = window.localStorage.getItem(USER_STORAGE_KEY);
@@ -14,7 +32,15 @@ function App() {
     }
 
     try {
-      return JSON.parse(savedUser);
+      const parsedUser = JSON.parse(savedUser);
+      const normalizedUser = normalizeUser(parsedUser);
+
+      if (!normalizedUser) {
+        window.localStorage.removeItem(USER_STORAGE_KEY);
+        return null;
+      }
+
+      return normalizedUser;
     } catch {
       window.localStorage.removeItem(USER_STORAGE_KEY);
       return null;
@@ -38,8 +64,19 @@ function App() {
   }, [theme]);
 
   function handleAuthenticated(user) {
-    setCurrentUser(user);
-    window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    const normalizedUser = normalizeUser(user);
+
+    if (!normalizedUser) {
+      window.localStorage.removeItem(USER_STORAGE_KEY);
+      setCurrentUser(null);
+      return;
+    }
+
+    setCurrentUser(normalizedUser);
+    window.localStorage.setItem(
+      USER_STORAGE_KEY,
+      JSON.stringify(normalizedUser)
+    );
   }
 
   function handleLogout() {

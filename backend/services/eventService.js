@@ -132,6 +132,41 @@ function validateEventWindow(startAt, endAt) {
   }
 }
 
+async function validateEventConflict({
+  endAt,
+  eventId = null,
+  startAt,
+  userId,
+}) {
+  const query = `
+    SELECT id, title, start_at, end_at
+    FROM events
+    WHERE user_id = ?
+      AND is_deleted = FALSE
+      AND start_at <= ?
+      AND end_at >= ?
+      ${eventId ? "AND id <> ?" : ""}
+    LIMIT 1
+  `;
+
+  const params = eventId
+    ? [userId, endAt, startAt, eventId]
+    : [userId, endAt, startAt];
+
+  const [rows] = await db.query(query, params);
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const conflictingEvent = rows[0];
+  const error = new Error(
+    `This event conflicts with "${conflictingEvent.title}". Choose another time.`
+  );
+  error.statusCode = 409;
+  throw error;
+}
+
 function mapEventInput(eventData, userId) {
   const title = normalizeRequiredText(eventData.title, "title");
   const description = normalizeOptionalText(eventData.description);
@@ -164,6 +199,7 @@ async function getAllEvents(userId) {
     `SELECT *
      FROM events
      WHERE user_id = ?
+       AND is_deleted = FALSE
      ORDER BY start_at ASC, id ASC`,
     [userId]
   );
@@ -174,6 +210,11 @@ async function getAllEvents(userId) {
 async function createEvent(eventData, userId) {
   const event = mapEventInput(eventData, userId);
   await validateTaskOwnership(event.taskId, userId);
+  await validateEventConflict({
+    endAt: event.endAt,
+    startAt: event.startAt,
+    userId,
+  });
 
   const [result] = await db.query(
     `INSERT INTO events (
@@ -195,9 +236,10 @@ async function createEvent(eventData, userId) {
     ]
   );
 
-  const [rows] = await db.query("SELECT * FROM events WHERE id = ?", [
-    result.insertId,
-  ]);
+  const [rows] = await db.query(
+    "SELECT * FROM events WHERE id = ? AND is_deleted = FALSE",
+    [result.insertId]
+  );
 
   return rows[0];
 }
@@ -205,6 +247,12 @@ async function createEvent(eventData, userId) {
 async function updateEvent(eventId, eventData, userId) {
   const event = mapEventInput(eventData, userId);
   await validateTaskOwnership(event.taskId, userId);
+  await validateEventConflict({
+    endAt: event.endAt,
+    eventId,
+    startAt: event.startAt,
+    userId,
+  });
 
   const [result] = await db.query(
     `UPDATE events
@@ -217,7 +265,7 @@ async function updateEvent(eventId, eventData, userId) {
          is_all_day = ?,
          recurrence_rule = ?,
          reminder_minutes = ?
-     WHERE id = ? AND user_id = ?`,
+     WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
     [
       event.taskId,
       event.title,
@@ -237,13 +285,18 @@ async function updateEvent(eventId, eventData, userId) {
     return null;
   }
 
-  const [rows] = await db.query("SELECT * FROM events WHERE id = ?", [eventId]);
+  const [rows] = await db.query(
+    "SELECT * FROM events WHERE id = ? AND is_deleted = FALSE",
+    [eventId]
+  );
   return rows[0];
 }
 
 async function deleteEvent(eventId, userId) {
   const [result] = await db.query(
-    "DELETE FROM events WHERE id = ? AND user_id = ?",
+    `UPDATE events
+     SET is_deleted = TRUE
+     WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
     [eventId, userId]
   );
 
