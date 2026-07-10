@@ -1,9 +1,8 @@
 const express = require("express");
 const { getDashboardData } = require("../controllers/dashboardController");
-const validateDashboardRange = require("../middleware/validateDashboardRange");
 
 const router = express.Router();
 
-router.get("/", validateDashboardRange, getDashboardData);
+router.get("/", getDashboardData);
 
 module.exports = router;
