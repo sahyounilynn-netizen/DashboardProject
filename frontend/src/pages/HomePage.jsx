@@ -785,6 +785,12 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     });
   }
 
+  function resetTaskWorkspaceState() {
+    handleCancelTaskEdit();
+    setTaskQuery("");
+    setTaskStatusFilter("all");
+  }
+
   function handleTaskEditChange(field, value) {
     if (field === "due_date") {
       setEditDeadlineWarning("");
@@ -899,6 +905,10 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
   }
 
   function handleViewChange(nextView) {
+    if (nextView === "tasks") {
+      resetTaskWorkspaceState();
+    }
+
     setActiveView(nextView);
   }
 
