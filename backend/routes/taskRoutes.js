@@ -25,9 +25,21 @@ function parseUserId(value) {
   return userId;
 }
 
+function requireUserId(value) {
+  const userId = parseUserId(value);
+
+  if (userId == null) {
+    const error = new Error("userId is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return userId;
+}
+
 router.get("/", async (req, res) => {
   try {
-    const userId = parseUserId(req.query.userId);
+    const userId = requireUserId(req.query.userId);
     const tasks = await getAllTasks(userId);
 
     res.json({
@@ -44,7 +56,7 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const userId = parseUserId(req.body.userId);
+    const userId = requireUserId(req.body.userId);
     const newTask = await createTask({
       ...req.body,
       userId,
@@ -65,7 +77,7 @@ router.post("/", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const taskId = req.params.id;
-    const userId = parseUserId(req.query.userId);
+    const userId = requireUserId(req.query.userId);
 
     const wasDeleted = await deleteTask(taskId, userId);
 
@@ -90,7 +102,7 @@ router.patch("/:id/status", async (req, res) => {
   try {
     const taskId = req.params.id;
     const { status } = req.body;
-    const userId = parseUserId(req.body.userId);
+    const userId = requireUserId(req.body.userId);
 
     const updatedTask = await updateTaskStatus(taskId, status, userId);
 
@@ -115,14 +127,7 @@ router.patch("/:id/status", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const taskId = req.params.id;
-    const userId = parseUserId(req.body.userId);
-
-    if (userId == null) {
-      const error = new Error("userId is required.");
-      error.statusCode = 400;
-      throw error;
-    }
-
+    const userId = requireUserId(req.body.userId);
     const updatedTask = await updateTask(taskId, req.body, userId);
 
     if (!updatedTask) {

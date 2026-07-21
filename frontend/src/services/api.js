@@ -1,5 +1,19 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+async function getResponseError(response, fallbackMessage) {
+  let errorData = null;
+
+  try {
+    errorData = await response.json();
+  } catch {
+    errorData = null;
+  }
+
+  throw new Error(
+    errorData?.error || errorData?.message || fallbackMessage
+  );
+}
+
 export async function getDashboardData({ scope, userId }) {
   const query = new URLSearchParams({
     scope,
@@ -12,8 +26,7 @@ export async function getDashboardData({ scope, userId }) {
   const response = await fetch(`${API_BASE_URL}/dashboard?${query.toString()}`);
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to fetch dashboard data");
+    await getResponseError(response, "Failed to fetch dashboard data");
   }
 
   const data = await response.json();
@@ -30,8 +43,7 @@ export async function registerUser(user) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to register user");
+    await getResponseError(response, "Failed to register user");
   }
 
   const data = await response.json();
@@ -48,8 +60,7 @@ export async function loginUser(credentials) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to log in");
+    await getResponseError(response, "Failed to log in");
   }
 
   const data = await response.json();
@@ -61,8 +72,7 @@ export async function getTasks(userId) {
   const response = await fetch(`${API_BASE_URL}/tasks${query}`);
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to fetch tasks");
+    await getResponseError(response, "Failed to fetch tasks");
   }
 
   const data = await response.json();
@@ -79,8 +89,7 @@ export async function createTask(task) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create task");
+    await getResponseError(response, "Failed to create task");
   }
 
   const data = await response.json();
@@ -94,8 +103,7 @@ export async function deleteTask(taskId, userId) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to delete task");
+    await getResponseError(response, "Failed to delete task");
   }
 
   const data = await response.json();
@@ -112,8 +120,7 @@ export async function updateTaskStatus(taskId, status, userId) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update task status");
+    await getResponseError(response, "Failed to update task status");
   }
 
   const data = await response.json();
@@ -130,8 +137,7 @@ export async function updateTask(taskId, task) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update task");
+    await getResponseError(response, "Failed to update task");
   }
 
   const data = await response.json();
@@ -146,8 +152,7 @@ export async function getEvents(userId) {
   const response = await fetch(`${API_BASE_URL}/events?${query.toString()}`);
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to fetch events");
+    await getResponseError(response, "Failed to fetch events");
   }
 
   const data = await response.json();
@@ -164,8 +169,7 @@ export async function createEvent(event) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create event");
+    await getResponseError(response, "Failed to create event");
   }
 
   const data = await response.json();
@@ -182,8 +186,7 @@ export async function updateEvent(eventId, event) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update event");
+    await getResponseError(response, "Failed to update event");
   }
 
   const data = await response.json();
@@ -203,8 +206,7 @@ export async function deleteEvent(eventId, userId) {
   );
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to delete event");
+    await getResponseError(response, "Failed to delete event");
   }
 
   return response.json();

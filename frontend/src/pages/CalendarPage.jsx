@@ -1,16 +1,24 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Bell,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  EllipsisVertical,
+  Eye,
   Flag,
+  Pencil,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Repeat,
   Search,
+  SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
@@ -43,7 +51,38 @@ function getDateOnlyKey(value) {
     return null;
   }
 
-  return String(value).slice(0, 10);
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
+      return trimmedValue;
+    }
+
+    const directDateMatch = trimmedValue.match(/^(\d{4}-\d{2}-\d{2})/);
+
+    if (directDateMatch) {
+      return directDateMatch[1];
+    }
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  return formatDateKey(parsedDate);
+}
+
+function isDateWithinRange(dateKey, startValue, endValue) {
+  const startDateKey = getDateOnlyKey(startValue);
+  const endDateKey = getDateOnlyKey(endValue);
+
+  if (!dateKey || !startDateKey || !endDateKey) {
+    return false;
+  }
+
+  return startDateKey <= dateKey && endDateKey >= dateKey;
 }
 
 function normalizeDateTimeInput(value) {
@@ -123,7 +162,11 @@ function getClosestScheduleDate(tasks, events) {
   const today = new Date();
   const allDates = [
     ...tasks.map((task) => getDateOnlyKey(task.due_date)).filter(Boolean),
-    ...events.map((event) => getDateOnlyKey(event.start_at)).filter(Boolean),
+    ...events.flatMap((event) =>
+      [getDateOnlyKey(event.start_at), getDateOnlyKey(event.end_at)].filter(
+        Boolean
+      )
+    ),
   ];
 
   if (allDates.length === 0) {
@@ -266,6 +309,992 @@ function getTaskIcon(task) {
   }
 
   return Flag;
+}
+
+function getTodayDateKey() {
+  return formatDateKey(new Date());
+}
+
+function getWeekBounds(dateKey) {
+  const baseDate = new Date(`${dateKey}T00:00:00`);
+  const weekStart = startOfWeek(baseDate);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  return {
+    startKey: formatDateKey(weekStart),
+    endKey: formatDateKey(weekEnd),
+  };
+}
+
+function getMonthBounds(dateKey) {
+  const baseDate = new Date(`${dateKey}T00:00:00`);
+  const monthStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const monthEnd = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+
+  return {
+    startKey: formatDateKey(monthStart),
+    endKey: formatDateKey(monthEnd),
+  };
+}
+
+function doesDateRangeOverlap(startKey, endKey, rangeStartKey, rangeEndKey) {
+  if (!startKey || !endKey || !rangeStartKey || !rangeEndKey) {
+    return false;
+  }
+
+  return startKey <= rangeEndKey && endKey >= rangeStartKey;
+}
+
+function buildEventRecord(event) {
+  const startKey = getDateOnlyKey(event.start_at);
+  const endKey = getDateOnlyKey(event.end_at) ?? startKey;
+
+  return {
+    ...event,
+    endKey,
+    searchText: `${event.title ?? ""} ${event.description ?? ""}`.toLowerCase(),
+    startKey,
+  };
+}
+
+function isEventToday(eventRecord, todayKey) {
+  return doesDateRangeOverlap(
+    eventRecord.startKey,
+    eventRecord.endKey,
+    todayKey,
+    todayKey
+  );
+}
+
+function isEventPast(eventRecord, todayKey) {
+  return Boolean(eventRecord.endKey && eventRecord.endKey < todayKey);
+}
+
+function isEventUpcoming(eventRecord, todayKey) {
+  return Boolean(
+    eventRecord.startKey &&
+      eventRecord.startKey > todayKey &&
+      !isEventPast(eventRecord, todayKey)
+  );
+}
+
+function isEventThisWeek(eventRecord, weekStartKey, weekEndKey) {
+  return doesDateRangeOverlap(
+    eventRecord.startKey,
+    eventRecord.endKey,
+    weekStartKey,
+    weekEndKey
+  );
+}
+
+function applyQuickEventFilter(eventRecords, quickFilter, todayKey, weekStartKey, weekEndKey) {
+  if (quickFilter === "today") {
+    return eventRecords.filter((eventRecord) => isEventToday(eventRecord, todayKey));
+  }
+
+  if (quickFilter === "upcoming") {
+    return eventRecords.filter((eventRecord) =>
+      isEventUpcoming(eventRecord, todayKey)
+    );
+  }
+
+  if (quickFilter === "week") {
+    return eventRecords.filter((eventRecord) =>
+      isEventThisWeek(eventRecord, weekStartKey, weekEndKey)
+    );
+  }
+
+  if (quickFilter === "past") {
+    return eventRecords.filter((eventRecord) => isEventPast(eventRecord, todayKey));
+  }
+
+  return eventRecords;
+}
+
+function formatDateTimeLabel(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(getDateFromValue(value));
+}
+
+function formatEventDateRangeLabel(event) {
+  const startKey = getDateOnlyKey(event.start_at);
+  const endKey = getDateOnlyKey(event.end_at);
+
+  if (!startKey) {
+    return "";
+  }
+
+  const startLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${startKey}T00:00:00`));
+
+  if (!endKey || endKey === startKey) {
+    return startLabel;
+  }
+
+  const endLabel = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${endKey}T00:00:00`));
+
+  return `${startLabel} - ${endLabel}`;
+}
+
+function getReminderLabel(value) {
+  if (value == null || value === "") {
+    return "";
+  }
+
+  const minutes = Number(value);
+
+  if (minutes === 1440) {
+    return "1 day before";
+  }
+
+  if (minutes === 60) {
+    return "1 hour before";
+  }
+
+  return `${minutes} min before`;
+}
+
+function formatColorLabel(color) {
+  if (!color) {
+    return "Blue";
+  }
+
+  return color.charAt(0).toUpperCase() + color.slice(1);
+}
+
+function sortEvents(items, sortBy) {
+  const sortedItems = [...items];
+
+  sortedItems.sort((firstEvent, secondEvent) => {
+    if (sortBy === "newest") {
+      return (
+        new Date(secondEvent.created_at ?? secondEvent.start_at).getTime() -
+        new Date(firstEvent.created_at ?? firstEvent.start_at).getTime()
+      );
+    }
+
+    if (sortBy === "oldest") {
+      return (
+        new Date(firstEvent.created_at ?? firstEvent.start_at).getTime() -
+        new Date(secondEvent.created_at ?? secondEvent.start_at).getTime()
+      );
+    }
+
+    const firstStart = new Date(firstEvent.start_at).getTime();
+    const secondStart = new Date(secondEvent.start_at).getTime();
+
+    return firstStart - secondStart || firstEvent.title.localeCompare(secondEvent.title);
+  });
+
+  return sortedItems;
+}
+
+function EventModalShell({ children, onClose, subtitle, title }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8 backdrop-blur-sm">
+      <div className="w-full max-w-3xl rounded-[28px] border border-[var(--border-soft)] bg-[var(--bg-panel)] shadow-[var(--shadow-panel)]">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-soft)] px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-xl font-semibold text-[var(--text-primary)]">{title}</h2>
+            {subtitle ? (
+              <p className="mt-1 text-sm text-[var(--text-muted)]">{subtitle}</p>
+            ) : null}
+          </div>
+
+          <Button
+            aria-label="Close"
+            className="shrink-0"
+            onClick={onClose}
+            size="sm"
+            variant="ghost"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="max-h-[calc(100vh-120px)] overflow-y-auto p-5 sm:p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventDetailsModal({ event, onClose, onDelete, onEdit, tasks }) {
+  const linkedTask = tasks.find((task) => task.id === event.task_id) ?? null;
+  const reminderLabel = getReminderLabel(event.reminder_minutes);
+
+  return (
+    <EventModalShell
+      onClose={onClose}
+      subtitle="Event details"
+      title={event.title}
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getEventColorClasses(event.color)}`}
+          >
+            {formatColorLabel(event.color)}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-[var(--bg-panel-soft)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+            {event.is_all_day ? "All day" : "Scheduled"}
+          </span>
+          {reminderLabel ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-panel-soft)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+              <Bell className="h-3.5 w-3.5" />
+              {reminderLabel}
+            </span>
+          ) : null}
+          {event.recurrence_rule ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-panel-soft)] px-3 py-1 text-xs font-medium capitalize text-[var(--text-secondary)]">
+              <Repeat className="h-3.5 w-3.5" />
+              {event.recurrence_rule}
+            </span>
+          ) : null}
+        </div>
+
+        <Card className="rounded-3xl">
+          <CardContent className="grid gap-4 p-5 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                Date
+              </p>
+              <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+                {formatEventDateRangeLabel(event)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                Time
+              </p>
+              <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+                {getEventTimeLabel(event)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                Starts
+              </p>
+              <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+                {formatDateTimeLabel(event.start_at)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                Ends
+              </p>
+              <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+                {formatDateTimeLabel(event.end_at)}
+              </p>
+            </div>
+
+            {linkedTask ? (
+              <div className="sm:col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                  Linked task
+                </p>
+                <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+                  {linkedTask.title}
+                </p>
+              </div>
+            ) : null}
+
+            {event.description ? (
+              <div className="sm:col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                  Description
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
+                  {event.description}
+                </p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-wrap gap-3">
+          <Button className="gap-2" onClick={() => onEdit(event)}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+          <Button className="gap-2" onClick={() => onDelete(event)} variant="danger">
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        </div>
+      </div>
+    </EventModalShell>
+  );
+}
+
+function EventManagementPage({
+  error,
+  events,
+  isSidebarVisible,
+  onEventCreate,
+  onEventDelete,
+  onEventUpdate,
+  onSidebarToggle,
+  tasks,
+}) {
+  const todayKey = getTodayDateKey();
+  const { startKey: weekStartKey, endKey: weekEndKey } = getWeekBounds(todayKey);
+  const { startKey: monthStartKey, endKey: monthEndKey } = getMonthBounds(todayKey);
+  const [quickFilter, setQuickFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [colorFilter, setColorFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("nearest");
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [openMenuEventId, setOpenMenuEventId] = useState(null);
+  const [eventForm, setEventForm] = useState(() => getDefaultEventForm(todayKey));
+  const [eventFormError, setEventFormError] = useState("");
+  const [isSavingEvent, setIsSavingEvent] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const eventRecords = useMemo(
+    () => events.map((event) => buildEventRecord(event)),
+    [events]
+  );
+
+  const quickFilterCounts = useMemo(
+    () => ({
+      all: eventRecords.length,
+      upcoming: applyQuickEventFilter(
+        eventRecords,
+        "upcoming",
+        todayKey,
+        weekStartKey,
+        weekEndKey
+      ).length,
+      today: applyQuickEventFilter(
+        eventRecords,
+        "today",
+        todayKey,
+        weekStartKey,
+        weekEndKey
+      ).length,
+      week: applyQuickEventFilter(
+        eventRecords,
+        "week",
+        todayKey,
+        weekStartKey,
+        weekEndKey
+      ).length,
+      past: applyQuickEventFilter(
+        eventRecords,
+        "past",
+        todayKey,
+        weekStartKey,
+        weekEndKey
+      ).length,
+    }),
+    [eventRecords, todayKey, weekEndKey, weekStartKey]
+  );
+
+  const hasActiveFilters =
+    quickFilter !== "all" ||
+    searchQuery.trim() !== "" ||
+    dateFilter !== "all" ||
+    colorFilter !== "all" ||
+    sortBy !== "nearest";
+
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const quickFilteredEvents = applyQuickEventFilter(
+      eventRecords,
+      quickFilter,
+      todayKey,
+      weekStartKey,
+      weekEndKey
+    );
+
+    const searchFilteredEvents = quickFilteredEvents.filter((eventRecord) =>
+      normalizedSearch ? eventRecord.searchText.includes(normalizedSearch) : true
+    );
+
+    const dateFilteredEvents = searchFilteredEvents.filter((eventRecord) => {
+      if (dateFilter === "today") {
+        return isEventToday(eventRecord, todayKey);
+      }
+
+      if (dateFilter === "week") {
+        return isEventThisWeek(eventRecord, weekStartKey, weekEndKey);
+      }
+
+      if (dateFilter === "month") {
+        return doesDateRangeOverlap(
+          eventRecord.startKey,
+          eventRecord.endKey,
+          monthStartKey,
+          monthEndKey
+        );
+      }
+
+      if (dateFilter === "past") {
+        return isEventPast(eventRecord, todayKey);
+      }
+
+      if (dateFilter === "future") {
+        return isEventUpcoming(eventRecord, todayKey);
+      }
+
+      return true;
+    });
+
+    const colorFilteredEvents = dateFilteredEvents.filter((eventRecord) =>
+      colorFilter === "all" ? true : eventRecord.color === colorFilter
+    );
+
+    return sortEvents(colorFilteredEvents, sortBy);
+  }, [
+    colorFilter,
+    dateFilter,
+    eventRecords,
+    monthEndKey,
+    monthStartKey,
+    quickFilter,
+    searchQuery,
+    sortBy,
+    todayKey,
+    weekEndKey,
+    weekStartKey,
+  ]);
+
+  const groupedEvents = useMemo(() => {
+    const groups = filteredEvents.reduce((collection, event) => {
+      const dateKey = getDateOnlyKey(event.start_at) ?? todayKey;
+
+      if (!collection[dateKey]) {
+        collection[dateKey] = [];
+      }
+
+      collection[dateKey].push(event);
+      return collection;
+    }, {});
+
+    return Object.entries(groups);
+  }, [filteredEvents, todayKey]);
+
+  const selectedEvent =
+    events.find((event) => event.id === selectedEventId) ?? null;
+  const editingEvent =
+    events.find((event) => event.id === editingEventId) ?? null;
+
+  useEffect(() => {
+    if (selectedEventId && !selectedEvent) {
+      setSelectedEventId(null);
+    }
+
+    if (editingEventId && !editingEvent) {
+      setEditingEventId(null);
+      setIsEventModalOpen(false);
+    }
+  }, [editingEvent, editingEventId, selectedEvent, selectedEventId]);
+
+  function resetFilters() {
+    setQuickFilter("all");
+    setSearchQuery("");
+    setDateFilter("all");
+    setColorFilter("all");
+    setSortBy("nearest");
+    setIsFilterPanelOpen(false);
+  }
+
+  function closeEventModal() {
+    setEditingEventId(null);
+    setEventFormError("");
+    setIsEventModalOpen(false);
+    setEventForm(getDefaultEventForm(todayKey));
+  }
+
+  function openCreateEventModal() {
+    setEditingEventId(null);
+    setEventForm(getDefaultEventForm(todayKey));
+    setEventFormError("");
+    setActionError("");
+    setIsEventModalOpen(true);
+  }
+
+  function openEditEventModal(event) {
+    setEditingEventId(event.id);
+    setSelectedEventId(null);
+    setEventForm(getEventFormFromEvent(event));
+    setEventFormError("");
+    setActionError("");
+    setOpenMenuEventId(null);
+    setIsEventModalOpen(true);
+  }
+
+  function handleEventFormChange(field, value) {
+    setEventForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+    setEventFormError("");
+    setActionError("");
+  }
+
+  async function handleEventSubmit() {
+    if (eventForm.title.trim() === "") {
+      setEventFormError("Event title is required.");
+      return;
+    }
+
+    setIsSavingEvent(true);
+    setEventFormError("");
+    setActionError("");
+
+    try {
+      const payload = mapFormToEventPayload(eventForm);
+
+      if (editingEventId) {
+        await onEventUpdate(editingEventId, payload);
+      } else {
+        await onEventCreate(payload);
+      }
+
+      closeEventModal();
+    } catch (submitError) {
+      setEventFormError(submitError.message);
+    } finally {
+      setIsSavingEvent(false);
+    }
+  }
+
+  async function handleDeleteEvent(event) {
+    const shouldDelete = window.confirm(
+      `Delete "${event.title}"? This action cannot be undone.`
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsSavingEvent(true);
+    setEventFormError("");
+    setActionError("");
+
+    try {
+      await onEventDelete(event.id);
+      setOpenMenuEventId(null);
+      setSelectedEventId((currentId) => (currentId === event.id ? null : currentId));
+
+      if (editingEventId === event.id) {
+        closeEventModal();
+      }
+    } catch (deleteError) {
+      setActionError(deleteError.message);
+    } finally {
+      setIsSavingEvent(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[26px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-panel)] backdrop-blur-xl sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex rounded-full bg-[var(--bg-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-accent)]">
+              My Events
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Events</h1>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Create and manage your scheduled events.
+              </p>
+            </div>
+          </div>
+
+          <Button className="gap-2 self-start lg:self-auto" onClick={openCreateEventModal}>
+            <Plus className="h-4 w-4" />
+            Add Event
+          </Button>
+        </div>
+      </section>
+
+      {error || actionError ? (
+        <div className="rounded-2xl border border-red-200 bg-[var(--bg-danger-soft)] px-4 py-3 text-sm text-red-700 dark:text-red-200">
+          {error || actionError}
+        </div>
+      ) : null}
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { key: "all", label: "All Events", count: quickFilterCounts.all },
+          { key: "upcoming", label: "Upcoming", count: quickFilterCounts.upcoming },
+          { key: "today", label: "Today", count: quickFilterCounts.today },
+          { key: "week", label: "This Week", count: quickFilterCounts.week },
+          { key: "past", label: "Past", count: quickFilterCounts.past },
+        ].map((item) => (
+          <button
+            className={`rounded-[24px] border p-4 text-left shadow-[var(--shadow-panel)] transition ${
+              quickFilter === item.key
+                ? "border-[var(--border-accent)] bg-[var(--bg-accent-soft)]"
+                : "border-[var(--border-soft)] bg-[var(--bg-panel)] hover:bg-[var(--bg-panel-soft)]"
+            }`}
+            key={item.key}
+            onClick={() => setQuickFilter(item.key)}
+            type="button"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+              {item.label}
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">
+              {item.count}
+            </p>
+          </button>
+        ))}
+      </section>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-3 border-b border-[var(--border-soft)] p-4 pb-4 sm:p-5">
+          <div className="flex flex-col gap-3 lg:hidden">
+            <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Input
+                  className="pl-11"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search events"
+                  value={searchQuery}
+                />
+              </div>
+
+              <Button
+                className="gap-2"
+                onClick={() => setIsFilterPanelOpen((open) => !open)}
+                size="default"
+                variant="secondary"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+              </Button>
+            </div>
+
+            {isFilterPanelOpen ? (
+              <div className="grid gap-3 rounded-2xl bg-[var(--bg-panel-soft)] p-3">
+                <select
+                  className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                  onChange={(event) => setDateFilter(event.target.value)}
+                  value={dateFilter}
+                >
+                  <option value="all">All dates</option>
+                  <option value="today">Today</option>
+                  <option value="week">This week</option>
+                  <option value="month">This month</option>
+                  <option value="future">Future</option>
+                  <option value="past">Past</option>
+                </select>
+
+                <select
+                  className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                  onChange={(event) => setColorFilter(event.target.value)}
+                  value={colorFilter}
+                >
+                  <option value="all">Event color</option>
+                  {EVENT_COLORS.map((color) => (
+                    <option key={color} value={color}>
+                      {formatColorLabel(color)}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                  onChange={(event) => setSortBy(event.target.value)}
+                  value={sortBy}
+                >
+                  <option value="nearest">Nearest first</option>
+                  <option value="newest">Newest created</option>
+                  <option value="oldest">Oldest created</option>
+                </select>
+
+                <Button
+                  disabled={!hasActiveFilters}
+                  onClick={resetFilters}
+                  variant="ghost"
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="hidden gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_170px_170px_170px_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+              <Input
+                className="pl-11"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search by event title"
+                value={searchQuery}
+              />
+            </div>
+
+            <select
+              className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+              onChange={(event) => setDateFilter(event.target.value)}
+              value={dateFilter}
+            >
+              <option value="all">All dates</option>
+              <option value="today">Today</option>
+              <option value="week">This week</option>
+              <option value="month">This month</option>
+              <option value="future">Future</option>
+              <option value="past">Past</option>
+            </select>
+
+            <select
+              className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+              onChange={(event) => setColorFilter(event.target.value)}
+              value={colorFilter}
+            >
+              <option value="all">Event color</option>
+              {EVENT_COLORS.map((color) => (
+                <option key={color} value={color}>
+                  {formatColorLabel(color)}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+              onChange={(event) => setSortBy(event.target.value)}
+              value={sortBy}
+            >
+              <option value="nearest">Nearest first</option>
+              <option value="newest">Newest created</option>
+              <option value="oldest">Oldest created</option>
+            </select>
+
+            <Button
+              className="h-11"
+              disabled={!hasActiveFilters}
+              onClick={resetFilters}
+              variant="ghost"
+            >
+              Clear Filters
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4 p-4 sm:p-5">
+          {events.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-6 py-6 text-center">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                No events scheduled
+              </h2>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                Create an event to start planning your schedule.
+              </p>
+              <Button className="mt-4 gap-2" onClick={openCreateEventModal}>
+                <Plus className="h-4 w-4" />
+                Add Event
+              </Button>
+            </div>
+          ) : filteredEvents.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-6 py-8 text-center">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                No events match these filters.
+              </h2>
+              <Button className="mt-4" onClick={resetFilters} variant="secondary">
+                Clear Filters
+              </Button>
+            </div>
+          ) : (
+            groupedEvents.map(([dateKey, dateEvents]) => (
+              <div className="space-y-3" key={dateKey}>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                    {getSelectedDateLabel(dateKey)}
+                  </h2>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {dateEvents.length} event{dateEvents.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {dateEvents.map((event) => {
+                    const reminderLabel = getReminderLabel(event.reminder_minutes);
+                    const isPastEvent = isEventPast(event, todayKey);
+                    const linkedTask = tasks.find((task) => task.id === event.task_id);
+
+                    return (
+                      <div
+                        className={`rounded-[24px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-panel)] transition ${
+                          isPastEvent ? "opacity-80" : ""
+                        }`}
+                        key={event.id}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => {
+                              setSelectedEventId(event.id);
+                              setOpenMenuEventId(null);
+                            }}
+                            type="button"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-base font-semibold text-[var(--text-primary)]">
+                                {event.title}
+                              </p>
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getEventColorClasses(event.color)}`}
+                              >
+                                {formatColorLabel(event.color)}
+                              </span>
+                              {isPastEvent ? (
+                                <span className="inline-flex items-center rounded-full bg-[var(--bg-panel-soft)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                                  Past
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--text-secondary)]">
+                              <span className="inline-flex items-center gap-1.5">
+                                <CalendarDays className="h-4 w-4 text-[var(--text-muted)]" />
+                                {formatEventDateRangeLabel(event)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock3 className="h-4 w-4 text-[var(--text-muted)]" />
+                                {getEventTimeLabel(event)}
+                              </span>
+                              {reminderLabel ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Bell className="h-4 w-4 text-[var(--text-muted)]" />
+                                  {reminderLabel}
+                                </span>
+                              ) : null}
+                              {event.recurrence_rule ? (
+                                <span className="inline-flex items-center gap-1.5 capitalize">
+                                  <Repeat className="h-4 w-4 text-[var(--text-muted)]" />
+                                  {event.recurrence_rule}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {event.description ? (
+                              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                                {event.description}
+                              </p>
+                            ) : null}
+
+                            {linkedTask ? (
+                              <p className="mt-2 text-xs font-medium text-[var(--text-muted)]">
+                                Linked task: {linkedTask.title}
+                              </p>
+                            ) : null}
+                          </button>
+
+                          <div className="relative shrink-0">
+                            <Button
+                              aria-expanded={openMenuEventId === event.id}
+                              className="h-10 w-10 p-0"
+                              onClick={() =>
+                                setOpenMenuEventId((currentId) =>
+                                  currentId === event.id ? null : event.id
+                                )
+                              }
+                              variant="ghost"
+                            >
+                              <EllipsisVertical className="h-4 w-4" />
+                            </Button>
+
+                            {openMenuEventId === event.id ? (
+                              <div className="absolute right-0 top-11 z-20 min-w-[168px] rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-panel)] p-2 shadow-[var(--shadow-panel)]">
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--text-secondary)] transition hover:bg-[var(--bg-panel-soft)] hover:text-[var(--text-primary)]"
+                                  onClick={() => {
+                                    setSelectedEventId(event.id);
+                                    setOpenMenuEventId(null);
+                                  }}
+                                  type="button"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                  View details
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--text-secondary)] transition hover:bg-[var(--bg-panel-soft)] hover:text-[var(--text-primary)]"
+                                  onClick={() => openEditEventModal(event)}
+                                  type="button"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  Edit
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/30"
+                                  onClick={() => handleDeleteEvent(event)}
+                                  type="button"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {isEventModalOpen ? (
+        <EventModalShell
+          onClose={closeEventModal}
+          subtitle={editingEvent ? "Update this event." : "Create a new scheduled event."}
+          title={editingEvent ? "Edit event" : "Create event"}
+        >
+          <SchedulerForm
+            editingEvent={editingEvent}
+            eventForm={eventForm}
+            eventFormError={eventFormError}
+            isSavingEvent={isSavingEvent}
+            onDelete={() => handleDeleteEvent(editingEvent)}
+            onEditCancel={closeEventModal}
+            onFormChange={handleEventFormChange}
+            onSubmit={handleEventSubmit}
+            showCreateHint={false}
+            tasks={tasks}
+          />
+        </EventModalShell>
+      ) : null}
+
+      {selectedEvent ? (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={() => setSelectedEventId(null)}
+          onDelete={handleDeleteEvent}
+          onEdit={openEditEventModal}
+          tasks={tasks}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function SchedulerForm({
@@ -495,12 +1524,11 @@ function SchedulerAgenda({
 }) {
   return (
     <Card>
-      <CardHeader className="p-5 pb-4">
+      <CardHeader className="p-4 pb-3">
         <CardTitle className="text-lg">{selectedLabel}</CardTitle>
-        <CardDescription>Press an item to continue.</CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-2 p-5 pt-0">
+      <CardContent className="space-y-2 p-4 pt-0">
         {items.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-3 py-4 text-sm text-[var(--text-muted)]">
             No tasks or events here.
@@ -570,13 +1598,30 @@ function CalendarPage({
   entryMode = "browse",
   error,
   events,
+  isSidebarVisible,
   onEventCreate,
   onEventDelete,
   onEventUpdate,
+  onSidebarToggle,
   onTaskSelect,
   tasks,
   user,
 }) {
+  if (entryMode === "events") {
+    return (
+      <EventManagementPage
+        error={error}
+        events={events}
+        isSidebarVisible={isSidebarVisible}
+        onEventCreate={onEventCreate}
+        onEventDelete={onEventDelete}
+        onEventUpdate={onEventUpdate}
+        onSidebarToggle={onSidebarToggle}
+        tasks={tasks}
+      />
+    );
+  }
+
   const initialDateKey = getClosestScheduleDate(tasks, events);
   const [currentView, setCurrentView] = useState("month");
   const [selectedDateKey, setSelectedDateKey] = useState(initialDateKey);
@@ -586,7 +1631,7 @@ function CalendarPage({
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState(
-    entryMode === "create-event" ? "event" : "all"
+    entryMode === "browse" ? "all" : "event"
   );
   const [colorFilter, setColorFilter] = useState("all");
   const [editingEventId, setEditingEventId] = useState(null);
@@ -595,6 +1640,10 @@ function CalendarPage({
   );
   const [eventFormError, setEventFormError] = useState("");
   const [isSavingEvent, setIsSavingEvent] = useState(false);
+
+  useEffect(() => {
+    setSourceFilter(entryMode === "browse" ? "all" : "event");
+  }, [entryMode]);
 
   function selectDate(dateKey) {
     const selectedDate = new Date(`${dateKey}T00:00:00`);
@@ -719,7 +1768,7 @@ function CalendarPage({
         kind: "task",
       }));
     const eventItems = events
-      .filter((event) => getDateOnlyKey(event.start_at) === dateKey)
+      .filter((event) => isDateWithinRange(dateKey, event.start_at, event.end_at))
       .map((event) => ({
         ...event,
         key: `event-${event.id}`,
@@ -769,12 +1818,17 @@ function CalendarPage({
   const selectedDateItems = getDayItems(selectedDateKey);
   const deadlineTaskCount = tasks.filter((task) => task.due_date).length;
   const overdueTaskCount = tasks.filter((task) => isTaskOverdue(task)).length;
-  const eventCount = events.filter(matchesFilters).length;
+  const eventCount = events
+    .map((event) => ({
+      ...event,
+      key: `event-${event.id}`,
+      kind: "event",
+    }))
+    .filter(matchesFilters).length;
   const selectedEvent = events.find((event) => event.id === editingEventId) ?? null;
   const shouldShowColorFilter = sourceFilter === "all" || sourceFilter === "event";
   const shouldShowSchedulerForm =
     entryMode === "create-event" || selectedEvent !== null;
-
   const scheduleHeading =
     currentView === "month"
       ? getMonthLabel(currentMonth)
@@ -783,51 +1837,50 @@ function CalendarPage({
         : getSelectedDateLabel(selectedDateKey);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-[26px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-5 shadow-[var(--shadow-panel)] backdrop-blur-xl sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-3">
+    <div className="space-y-5">
+      <section className="rounded-[26px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-panel)] backdrop-blur-xl sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-2">
             <div className="inline-flex rounded-full bg-[var(--bg-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-accent)]">
               Calendar
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
-                Scheduler for {user.name}
+              <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
+                {`Calendar for ${user.name}`}
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-                Tasks are deadlines. Events are scheduled time blocks with a
-                start and end time.
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Tasks show deadlines. Events use start and end times.
               </p>
             </div>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-3">
             <Card className="bg-white/70 dark:bg-slate-900/60">
-              <CardContent className="p-3.5">
+              <CardContent className="p-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   Deadlines
                 </p>
-                <p className="mt-1.5 text-xl font-semibold text-[var(--text-primary)]">
+                <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                   {deadlineTaskCount}
                 </p>
               </CardContent>
             </Card>
             <Card className="bg-white/70 dark:bg-slate-900/60">
-              <CardContent className="p-3.5">
+              <CardContent className="p-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   Events
                 </p>
-                <p className="mt-1.5 text-xl font-semibold text-[var(--text-primary)]">
+                <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                   {eventCount}
                 </p>
               </CardContent>
             </Card>
             <Card className="bg-white/70 dark:bg-slate-900/60">
-              <CardContent className="p-3.5">
+              <CardContent className="p-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   Overdue
                 </p>
-                <p className="mt-1.5 text-xl font-semibold text-[var(--text-primary)]">
+                <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                   {overdueTaskCount}
                 </p>
               </CardContent>
@@ -842,15 +1895,13 @@ function CalendarPage({
         </div>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_330px]">
         <Card className="overflow-hidden">
-          <CardHeader className="space-y-4 border-b border-[var(--border-soft)] p-5 pb-4">
+          <CardHeader className="space-y-3 border-b border-[var(--border-soft)] p-4 pb-4">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <CardTitle className="text-xl">{scheduleHeading}</CardTitle>
-                <CardDescription>
-                  Search by title, filter the item type, and use colors only for events.
-                </CardDescription>
+                <CardDescription>Search and filter your schedule.</CardDescription>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -873,34 +1924,34 @@ function CalendarPage({
               </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px]">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_160px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
                 <Input
                   className="pl-11"
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search tasks or events"
+                  placeholder="Search schedule"
                   value={searchQuery}
                 />
               </div>
 
               <select
-                className="h-12 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
                 onChange={(event) => setSourceFilter(event.target.value)}
                 value={sourceFilter}
               >
-                <option value="all">All items</option>
-                <option value="event">Events only</option>
-                <option value="task">Tasks only</option>
+                <option value="all">All</option>
+                <option value="event">Events</option>
+                <option value="task">Tasks</option>
               </select>
 
               <select
-                className="h-12 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!shouldShowColorFilter}
                 onChange={(event) => setColorFilter(event.target.value)}
                 value={colorFilter}
               >
-                <option value="all">All colors</option>
+                <option value="all">Colors</option>
                 {EVENT_COLORS.map((color) => (
                   <option key={color} value={color}>
                     {color}
@@ -909,10 +1960,8 @@ function CalendarPage({
               </select>
             </div>
 
-            <div className="rounded-2xl bg-[var(--bg-panel-soft)] px-4 py-3 text-sm text-[var(--text-muted)]">
-              `Tasks` are deadline items without time slots.
-              `Events` are scheduled blocks with start/end times.
-              Colors only affect events.
+            <div className="rounded-2xl bg-[var(--bg-panel-soft)] px-4 py-2.5 text-sm text-[var(--text-muted)]">
+              Tasks use due dates. Colors apply to events only.
             </div>
           </CardHeader>
 
@@ -1093,13 +2142,13 @@ function CalendarPage({
             />
           ) : (
             <Card>
-              <CardHeader className="p-5 pb-4">
+              <CardHeader className="p-4 pb-3">
                 <CardTitle className="text-lg">Selected day</CardTitle>
                 <CardDescription>{getSelectedDateLabel(selectedDateKey)}</CardDescription>
               </CardHeader>
-              <CardContent className="p-5 pt-0">
+              <CardContent className="p-4 pt-0">
                 <div className="rounded-xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-4 py-4 text-sm text-[var(--text-muted)]">
-                  Choose an event to edit it.
+                  Select an event to edit.
                 </div>
               </CardContent>
             </Card>

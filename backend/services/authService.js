@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const db = require("../config/db");
 
 const SALT_ROUNDS = 10;
+const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$/;
 
 function sanitizeUser(user) {
   return {
@@ -76,7 +77,21 @@ async function loginUser(credentials) {
   }
 
   const user = rows[0];
-  const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+  let isPasswordValid = false;
+
+  if (BCRYPT_HASH_PATTERN.test(user.password_hash)) {
+    isPasswordValid = await bcrypt.compare(password, user.password_hash);
+  } else if (password === user.password_hash) {
+    isPasswordValid = true;
+
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    await db.query(
+      `UPDATE users
+       SET password_hash = ?
+       WHERE id = ?`,
+      [passwordHash, user.id]
+    );
+  }
 
   if (!isPasswordValid) {
     const error = new Error("Invalid email or password.");

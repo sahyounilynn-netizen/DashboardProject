@@ -2,11 +2,13 @@ import { Card, CardContent } from "./ui/card";
 
 function DashboardCard({ onClick, title, value }) {
   const content = (
-    <CardContent className="space-y-2 p-4">
-      <h3 className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+    <CardContent className="space-y-0.5 p-3">
+      <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
         {title}
       </h3>
-      <p className="text-2xl font-semibold text-[var(--text-primary)]">{value}</p>
+      <p className="text-2xl font-semibold leading-none text-[var(--text-primary)]">
+        {value}
+      </p>
     </CardContent>
   );
 
@@ -17,7 +19,7 @@ function DashboardCard({ onClick, title, value }) {
         onClick={onClick}
         type="button"
       >
-        <Card className="min-w-[180px] bg-white/80">
+        <Card className="min-w-[136px] bg-white/80">
           {content}
         </Card>
       </button>
@@ -25,7 +27,7 @@ function DashboardCard({ onClick, title, value }) {
   }
 
   return (
-    <Card className="min-w-[180px] bg-white/80">
+    <Card className="min-w-[136px] bg-white/80">
       {content}
     </Card>
   );

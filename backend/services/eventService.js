@@ -143,8 +143,8 @@ async function validateEventConflict({
     FROM events
     WHERE user_id = ?
       AND is_deleted = FALSE
-      AND start_at <= ?
-      AND end_at >= ?
+      AND start_at < ?
+      AND end_at > ?
       ${eventId ? "AND id <> ?" : ""}
     LIMIT 1
   `;

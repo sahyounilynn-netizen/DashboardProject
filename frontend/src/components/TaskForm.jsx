@@ -117,7 +117,10 @@ function TaskForm({ existingTasks = [], onTaskCreated }) {
     setFormError("");
     setDeadlineWarning("");
     setIsDeadlineConfirmed(true);
-    await saveTask(pendingTaskData ?? buildTaskData());
+    await saveTask({
+      ...(pendingTaskData ?? buildTaskData()),
+      allowSharedDeadline: true,
+    });
   }
 
   return (

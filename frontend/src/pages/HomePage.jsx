@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CalendarDays,
+  CheckCircle2,
   ListTodo,
+  PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  RefreshCcw,
+  X,
 } from "lucide-react";
-import Sidebar from "../components/Sidebar";
 import DashboardCard from "../components/DashboardCard";
+import Sidebar from "../components/Sidebar";
 import TaskForm from "../components/TaskForm";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
@@ -19,13 +21,44 @@ import {
   createTask,
   deleteEvent,
   deleteTask,
-  getDashboardData,
   getEvents,
   getTasks,
   updateEvent,
   updateTask,
   updateTaskStatus,
 } from "../services/api";
+
+function normalizeDateKey(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
+      return trimmedValue;
+    }
+
+    const directDateMatch = trimmedValue.match(/^(\d{4}-\d{2}-\d{2})/);
+
+    if (directDateMatch) {
+      return directDateMatch[1];
+    }
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  const year = parsedDate.getFullYear();
+  const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+  const day = String(parsedDate.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
 
 function formatDueDate(value) {
   if (!value) {
@@ -36,7 +69,7 @@ function formatDueDate(value) {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
+  }).format(new Date(`${normalizeDateKey(value)}T00:00:00`));
 }
 
 function getTaskFormValues(task) {
@@ -44,16 +77,12 @@ function getTaskFormValues(task) {
     title: task.title ?? "",
     priority: task.priority ?? "medium",
     status: task.status ?? "pending",
-    due_date: task.due_date ? String(task.due_date).slice(0, 10) : "",
+    due_date: normalizeDateKey(task.due_date),
   };
 }
 
 function getDateKey(value) {
-  if (!value) {
-    return null;
-  }
-
-  return String(value).slice(0, 10);
+  return normalizeDateKey(value) || null;
 }
 
 function getTodayKey() {
@@ -62,6 +91,142 @@ function getTodayKey() {
   const day = String(today.getDate()).padStart(2, "0");
 
   return `${today.getFullYear()}-${month}-${day}`;
+}
+
+function addDaysToDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + days);
+
+  return normalizeDateKey(date);
+}
+
+function getRangeEndKey(range, todayKey) {
+  if (range === "today") {
+    return todayKey;
+  }
+
+  if (range === "week") {
+    return addDaysToDateKey(todayKey, 6);
+  }
+
+  if (range === "month") {
+    return addDaysToDateKey(todayKey, 29);
+  }
+
+  return null;
+}
+
+function isDateInRange(dateKey, startKey, endKey) {
+  if (!dateKey) {
+    return false;
+  }
+
+  if (dateKey < startKey) {
+    return false;
+  }
+
+  if (endKey === null) {
+    return true;
+  }
+
+  return dateKey <= endKey;
+}
+
+function formatEventDateLabel(event) {
+  const startDate = new Date(event.start_at);
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(startDate);
+}
+
+function formatActivityTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsedDate);
+}
+
+function getPriorityRank(priority) {
+  if (priority === "high") {
+    return 0;
+  }
+
+  if (priority === "medium") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function isTaskOverdueForDashboard(task, todayKey) {
+  const dueDateKey = getDateKey(task.due_date);
+
+  return Boolean(dueDateKey && dueDateKey < todayKey && task.status !== "completed");
+}
+
+function buildRecentActivity(tasks, events) {
+  const taskActivity = tasks
+    .map((task) => {
+      const changedAt = task.updated_at || task.created_at;
+
+      if (!changedAt) {
+        return null;
+      }
+
+      return {
+        id: `task-${task.id}`,
+        label:
+          task.status === "completed"
+            ? "Task completed"
+            : task.updated_at && task.created_at && task.updated_at !== task.created_at
+              ? "Task status changed"
+              : "Task created",
+        title: task.title,
+        timestamp: changedAt,
+      };
+    })
+    .filter(Boolean);
+
+  const eventActivity = events
+    .map((event) => {
+      const changedAt = event.created_at || event.start_at;
+
+      if (!changedAt) {
+        return null;
+      }
+
+      return {
+        id: `event-${event.id}`,
+        label: "Event added",
+        title: event.title,
+        timestamp: changedAt,
+      };
+    })
+    .filter(Boolean);
+
+  return [...taskActivity, ...eventActivity]
+    .sort(
+      (firstItem, secondItem) =>
+        new Date(secondItem.timestamp).getTime() -
+        new Date(firstItem.timestamp).getTime()
+    )
+    .slice(0, 5);
 }
 
 function compareTasksByDeadline(firstTask, secondTask) {
@@ -111,26 +276,13 @@ function getPriorityBadgeClass(priority) {
   return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200";
 }
 
-function countOtherTasksWithDeadline(tasks, dueDate, taskIdToIgnore = null) {
-  if (!dueDate) {
-    return 0;
-  }
-
-  return tasks.filter((task) => {
-    const matchesDeadline = String(task.due_date ?? "").slice(0, 10) === dueDate;
-    const isIgnoredTask = taskIdToIgnore != null && task.id === taskIdToIgnore;
-
-    return matchesDeadline && !isIgnoredTask;
-  }).length;
-}
-
 function getTasksForDeadline(tasks, dueDate, taskIdToIgnore = null) {
   if (!dueDate) {
     return [];
   }
 
   return tasks.filter((task) => {
-    const matchesDeadline = String(task.due_date ?? "").slice(0, 10) === dueDate;
+    const matchesDeadline = normalizeDateKey(task.due_date) === dueDate;
     const isIgnoredTask = taskIdToIgnore != null && task.id === taskIdToIgnore;
 
     return matchesDeadline && !isIgnoredTask;
@@ -156,6 +308,406 @@ function ActionBox({ description, icon: Icon, onClick, title }) {
         </p>
       </div>
     </button>
+  );
+}
+
+function ModalShell({ children, onClose, title }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[28px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-4 shadow-[0_30px_80px_rgba(15,23,42,0.25)] sm:p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            {title}
+          </h2>
+          <button
+            aria-label="Close dialog"
+            className="rounded-full border border-[var(--border-soft)] bg-[var(--bg-panel-soft)] p-2 text-[var(--text-secondary)] transition hover:bg-[var(--bg-accent-soft)] hover:text-[var(--text-accent)]"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TodayFocusPanel({
+  onTaskClick,
+  onStatusChange,
+  progressSummary,
+  rangeLabel,
+  tasks,
+  urgentTasks,
+}) {
+  const totalTracked =
+    progressSummary.completed +
+    progressSummary.inProgress +
+    progressSummary.pending;
+  const completionPercent =
+    totalTracked === 0
+      ? 0
+      : Math.round((progressSummary.completed / totalTracked) * 100);
+
+  return (
+    <Card className="self-start bg-white/80 dark:bg-slate-900/60">
+      <CardContent className="space-y-3 p-3.5">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-accent)]">
+              Overview
+            </p>
+            <h3 className="text-lg font-semibold leading-tight text-[var(--text-primary)]">
+              Today's Focus
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              {rangeLabel}
+            </p>
+          </div>
+        </div>
+
+        {tasks.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-4 py-4">
+            <h4 className="text-base font-semibold text-[var(--text-primary)]">
+              You&apos;re all caught up for today.
+            </h4>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              No tasks are currently due.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                Tasks due
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">
+                {tasks.length} item{tasks.length === 1 ? "" : "s"}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {tasks.map((task) => (
+                <button
+                  className="w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-panel-soft)] px-3 py-2.5 text-left transition hover:bg-[var(--bg-accent-soft)]"
+                  key={task.id}
+                  onClick={() => onTaskClick?.(task)}
+                  type="button"
+                >
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">
+                        {task.title}
+                      </p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {formatDueDate(task.due_date)}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getPriorityBadgeClass(task.priority)}`}
+                      >
+                        {task.priority}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusBadgeClass(task.status)}`}
+                      >
+                        {getTaskStatusLabel(task.status)}
+                      </span>
+                      <select
+                        className="h-8 rounded-full border border-[var(--border-muted)] bg-white px-3 text-xs font-semibold text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] dark:bg-slate-950"
+                        onChange={(event) => onStatusChange(task.id, event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        value={task.status}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-[var(--bg-panel-soft)] px-3 py-3">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                    Progress
+                  </p>
+                  <p className="mt-1 text-xl font-semibold leading-none text-[var(--text-primary)]">
+                    {completionPercent}%
+                  </p>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {progressSummary.completed}/{totalTracked || 0}
+                </p>
+              </div>
+
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-950/60">
+                <div className="flex h-full w-full">
+                  <div
+                    className="bg-emerald-500"
+                    style={{
+                      width:
+                        totalTracked === 0
+                          ? "0%"
+                          : `${(progressSummary.completed / totalTracked) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="bg-sky-500"
+                    style={{
+                      width:
+                        totalTracked === 0
+                          ? "0%"
+                          : `${(progressSummary.inProgress / totalTracked) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="bg-slate-300 dark:bg-slate-700"
+                    style={{
+                      width:
+                        totalTracked === 0
+                          ? "100%"
+                          : `${(progressSummary.pending / totalTracked) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-white/70 px-2.5 py-2 text-center dark:bg-slate-950/40">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    Done
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                    {progressSummary.completed}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/70 px-2.5 py-2 text-center dark:bg-slate-950/40">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    Active
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                    {progressSummary.inProgress}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/70 px-2.5 py-2 text-center dark:bg-slate-950/40">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    Pending
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                    {progressSummary.pending}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                Urgent tasks
+              </p>
+              {urgentTasks.length === 0 ? (
+                <div className="rounded-xl bg-[var(--bg-panel-soft)] px-3 py-3 text-sm text-[var(--text-muted)]">
+                  No urgent tasks.
+                </div>
+              ) : (
+                urgentTasks.map((task) => (
+                  <button
+                    className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-left transition hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30"
+                    key={task.id}
+                    onClick={() => onTaskClick?.(task)}
+                    type="button"
+                  >
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
+                      {task.title}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-slate-900 dark:text-rose-200">
+                        High priority
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusBadgeClass(task.status)}`}
+                      >
+                        {getTaskStatusLabel(task.status)}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UpcomingPanel({ emptyMessage, items, onEventClick, onTaskClick }) {
+  const [showAll, setShowAll] = useState(false);
+  const displayedItems = showAll ? items : items.slice(0, 4);
+
+  return (
+    <Card className="self-start bg-white/80 dark:bg-slate-900/60">
+      <CardContent className="space-y-3 p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-accent)]">
+              Schedule
+            </p>
+            <h3 className="text-lg font-semibold leading-tight text-[var(--text-primary)]">
+              Upcoming
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              Next 3 to 5 items
+            </p>
+          </div>
+          {items.length > 4 ? (
+            <button
+              className="text-xs font-semibold text-[var(--text-accent)] transition hover:opacity-80"
+              onClick={() => setShowAll((current) => !current)}
+              type="button"
+            >
+              {showAll ? "Show less" : "View all"}
+            </button>
+          ) : null}
+        </div>
+
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-3 py-3 text-sm text-[var(--text-muted)]">
+            {emptyMessage}
+          </div>
+        ) : (
+          <div className={`space-y-2 ${showAll && items.length > 4 ? "max-h-[320px] overflow-y-auto pr-1" : ""}`}>
+            {displayedItems.map((item) => {
+              const isTask = item.kind === "task";
+              const Icon = isTask ? ListTodo : CalendarDays;
+
+              return (
+                <button
+                  className="w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-panel-soft)] px-3 py-2.5 text-left transition hover:bg-[var(--bg-accent-soft)]"
+                  key={item.key}
+                  onClick={() =>
+                    isTask ? onTaskClick?.(item.source) : onEventClick?.(item.source)
+                  }
+                  type="button"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-3.5 w-3.5 text-[var(--text-accent)]" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                          {isTask ? "Task" : "Event"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        {item.when}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {isTask ? (
+                      <>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getPriorityBadgeClass(item.source.priority)}`}
+                        >
+                          {item.source.priority}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusBadgeClass(item.source.status)}`}
+                        >
+                          {getTaskStatusLabel(item.source.status)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-200">
+                        Scheduled
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecentActivityCard({ activities }) {
+  const [showAll, setShowAll] = useState(false);
+  const displayedActivities = showAll ? activities : activities.slice(0, 4);
+
+  return (
+    <SmallInsightCard
+      subtitle="Latest changes across tasks and events."
+      title="Recent Activity"
+    >
+      {activities.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--border-muted)] bg-[var(--bg-panel-soft)] px-3 py-3 text-sm text-[var(--text-muted)]">
+          No activity yet.
+        </div>
+      ) : (
+        <>
+          <div className={`space-y-2 ${showAll && activities.length > 4 ? "max-h-[320px] overflow-y-auto pr-1" : ""}`}>
+            {displayedActivities.map((activity) => (
+              <div
+                className="rounded-xl bg-[var(--bg-panel-soft)] px-3 py-2"
+                key={activity.id}
+              >
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
+                  {activity.label}
+                </p>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  {activity.title}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {formatActivityTime(activity.timestamp)}
+                </p>
+              </div>
+            ))}
+          </div>
+          {activities.length > 4 ? (
+            <button
+              className="text-xs font-semibold text-[var(--text-accent)] transition hover:opacity-80"
+              onClick={() => setShowAll((current) => !current)}
+              type="button"
+            >
+              {showAll ? "Show less" : "View all activity"}
+            </button>
+          ) : null}
+        </>
+      )}
+    </SmallInsightCard>
+  );
+}
+
+function SmallInsightCard({ children, title, subtitle }) {
+  return (
+    <Card className="self-start bg-white/80 dark:bg-slate-900/60">
+      <CardContent className="space-y-3 p-3.5">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">
+            {title}
+          </h3>
+          <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -220,6 +772,13 @@ function TasksPage({
   activeStatusFilter,
   editingTaskId,
   error,
+  events,
+  onOpenAddTask,
+  onDuplicateTask,
+  onClearFilters,
+  onDueFilterChange,
+  onPriorityFilterChange,
+  onSortChange,
   handleConfirmTaskEditSave,
   handleCancelTaskEdit,
   handleDeleteTask,
@@ -229,12 +788,15 @@ function TasksPage({
   handleTaskEditChange,
   onStatusFilterChange,
   onTaskQueryChange,
+  taskDueFilter,
+  taskPriorityFilter,
   taskQuery,
+  taskSort,
   taskEditForm,
   tasks,
 }) {
   const groupedDeadlines = allTasks.reduce((groups, task) => {
-    const dueDate = String(task.due_date ?? "").slice(0, 10);
+    const dueDate = normalizeDateKey(task.due_date);
 
     if (!dueDate) {
       return groups;
@@ -250,41 +812,165 @@ function TasksPage({
   const duplicateDeadlineGroups = Object.entries(groupedDeadlines).filter(
     ([, groupedTasks]) => groupedTasks.length > 1
   );
+  const linkedEventsByTaskId = events.reduce((groups, event) => {
+    if (!event.task_id) {
+      return groups;
+    }
+
+    if (!groups[event.task_id]) {
+      groups[event.task_id] = [];
+    }
+
+    groups[event.task_id].push(event);
+    return groups;
+  }, {});
+  const quickCounts = {
+    all: allTasks.length,
+    pending: allTasks.filter((task) => task.status === "pending").length,
+    "in-progress": allTasks.filter((task) => task.status === "in-progress").length,
+    completed: allTasks.filter((task) => task.status === "completed").length,
+    overdue: allTasks.filter((task) => isTaskOverdueForDashboard(task, getTodayKey())).length,
+  };
+  const activeFilterCount = [
+    taskQuery.trim() !== "",
+    activeStatusFilter !== "all",
+    taskPriorityFilter !== "all",
+    taskDueFilter !== "all",
+    taskSort !== "newest",
+  ].filter(Boolean).length;
+  const hasActiveFilters = activeFilterCount > 0;
+  const filterControls = (
+    <>
+      <select
+        aria-label="Filter by status"
+        className="h-10 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+        onChange={(event) => onStatusFilterChange(event.target.value)}
+        value={activeStatusFilter}
+      >
+        <option value="all">All statuses</option>
+        <option value="pending">Pending</option>
+        <option value="in-progress">In Progress</option>
+        <option value="completed">Completed</option>
+        <option value="overdue">Overdue</option>
+      </select>
+      <select
+        aria-label="Filter by priority"
+        className="h-10 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+        onChange={(event) => onPriorityFilterChange(event.target.value)}
+        value={taskPriorityFilter}
+      >
+        <option value="all">All priorities</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <select
+        aria-label="Filter by due date"
+        className="h-10 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+        onChange={(event) => onDueFilterChange(event.target.value)}
+        value={taskDueFilter}
+      >
+        <option value="all">All dates</option>
+        <option value="today">Due today</option>
+        <option value="week">This week</option>
+        <option value="overdue">Overdue</option>
+        <option value="none">No date</option>
+      </select>
+      <select
+        aria-label="Sort tasks"
+        className="h-10 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+        onChange={(event) => onSortChange(event.target.value)}
+        value={taskSort}
+      >
+        <option value="newest">Newest</option>
+        <option value="oldest">Oldest</option>
+        <option value="due-date">Due date</option>
+        <option value="priority">Priority</option>
+      </select>
+      {hasActiveFilters ? (
+        <Button
+          className="h-10"
+          onClick={onClearFilters}
+          size="sm"
+          variant="secondary"
+        >
+          Clear Filters ({activeFilterCount})
+        </Button>
+      ) : null}
+    </>
+  );
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-[30px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-6 shadow-[var(--shadow-panel)] backdrop-blur-xl sm:p-8">
-        <div className="space-y-3">
-          <div className="inline-flex rounded-full bg-[var(--bg-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-accent)]">
-            My Tasks
-          </div>
-          <div>
-            <h1 className="text-3xl font-semibold text-[var(--text-primary)] sm:text-4xl">
-              Task workspace
+    <div className="space-y-4">
+      <section className="rounded-[24px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-4 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex rounded-full bg-[var(--bg-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-accent)]">
+              My Tasks
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+              My Tasks
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)] sm:text-base">
-              Review your tasks, adjust deadlines, and keep everything clean in
-              one focused place.
+            <p className="text-sm text-[var(--text-muted)]">
+              Organize, update, and track your work.
             </p>
           </div>
+          <Button className="h-10 gap-2 self-start lg:self-auto" onClick={onOpenAddTask}>
+            <Plus className="h-4 w-4" />
+            Add Task
+          </Button>
         </div>
 
-        <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <Input
-            onChange={(event) => onTaskQueryChange(event.target.value)}
-            placeholder="Search tasks by title"
-            value={taskQuery}
-          />
-          <select
-            className="h-12 w-full rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
-            onChange={(event) => onStatusFilterChange(event.target.value)}
-            value={activeStatusFilter}
-          >
-            <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="in-progress">In Progress</option>
-            <option value="completed">Completed</option>
-          </select>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["all", "All"],
+              ["pending", "Pending"],
+              ["in-progress", "In Progress"],
+              ["completed", "Completed"],
+              ["overdue", "Overdue"],
+            ].map(([value, label]) => (
+              <button
+                aria-pressed={activeStatusFilter === value}
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+                  activeStatusFilter === value
+                    ? "bg-[var(--bg-accent-soft)] text-[var(--text-accent)]"
+                    : "bg-[var(--bg-panel-soft)] text-[var(--text-secondary)] hover:bg-[var(--bg-accent-soft)] hover:text-[var(--text-accent)]"
+                }`}
+                key={value}
+                onClick={() => onStatusFilterChange(value)}
+                type="button"
+              >
+                {label} {quickCounts[value]}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 lg:hidden">
+            <Input
+              className="h-10"
+              onChange={(event) => onTaskQueryChange(event.target.value)}
+              placeholder="Search by task title"
+              value={taskQuery}
+            />
+            <details className="group">
+              <summary className="flex h-10 cursor-pointer items-center justify-between rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm font-semibold text-[var(--text-secondary)] shadow-sm">
+                <span>Filters{hasActiveFilters ? ` (${activeFilterCount})` : ""}</span>
+                <span className="text-xs">Open</span>
+              </summary>
+              <div className="mt-3 grid gap-3">{filterControls}</div>
+            </details>
+          </div>
+
+          <div className="hidden gap-3 lg:grid xl:grid-cols-[minmax(0,1fr)_160px_160px_170px_160px_auto]">
+            <Input
+              className="h-10"
+              onChange={(event) => onTaskQueryChange(event.target.value)}
+              placeholder="Search by task title"
+              value={taskQuery}
+            />
+            {filterControls}
+          </div>
         </div>
       </section>
 
@@ -294,18 +980,47 @@ function TasksPage({
         </div>
       )}
 
-      {tasks.length === 0 ? (
+      {allTasks.length === 0 ? (
         <Card className="bg-white/75">
-          <CardContent className="p-6 text-sm text-[var(--text-muted)]">
-            No tasks added yet.
+          <CardContent className="space-y-3 p-5">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                No tasks yet
+              </h2>
+              <p className="text-sm text-[var(--text-muted)]">
+                Create your first task to start organizing your work.
+              </p>
+            </div>
+            <Button className="gap-2" onClick={onOpenAddTask} size="sm">
+              <Plus className="h-4 w-4" />
+              Add Task
+            </Button>
+          </CardContent>
+        </Card>
+      ) : tasks.length === 0 ? (
+        <Card className="bg-white/75">
+          <CardContent className="space-y-3 p-5">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                No tasks match these filters
+              </h2>
+            </div>
+            {hasActiveFilters ? (
+              <Button onClick={onClearFilters} size="sm" variant="secondary">
+                Clear Filters ({activeFilterCount})
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px] xl:items-start">
           <div className="grid gap-4">
             {tasks.map((task) => (
-              <Card className="bg-white/80" key={task.id}>
-                <CardContent className="flex flex-col gap-5 p-6">
+              <Card
+                className={`bg-white/80 ${task.status === "completed" ? "opacity-70" : ""}`}
+                key={task.id}
+              >
+                <CardContent className="flex flex-col gap-2.5 p-3.5">
                   {editingTaskId === task.id ? (
                     <div className="space-y-4">
                       <div className="grid gap-4 sm:grid-cols-2">
@@ -396,43 +1111,58 @@ function TasksPage({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1.5">
                         <div className="space-y-1">
-                          <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                            {task.title}
-                          </h3>
+                          <div className="flex items-start gap-2">
+                            <button
+                              aria-label={`Mark ${task.title} complete`}
+                              className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border transition ${
+                                task.status === "completed"
+                                  ? "border-emerald-500 bg-emerald-500 text-white"
+                                  : "border-[var(--border-muted)] bg-white text-[var(--text-muted)] hover:border-emerald-400 hover:text-emerald-600"
+                              }`}
+                              onClick={() => handleStatusChange(task.id, "completed")}
+                              type="button"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            </button>
+                            <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                              {task.title}
+                            </h3>
+                          </div>
+                          {task.description ? (
+                            <p className="text-sm text-[var(--text-muted)]">
+                              {task.description}
+                            </p>
+                          ) : null}
                           <p className="text-sm text-[var(--text-muted)]">
-                            Priority:{" "}
-                            <span className="font-medium capitalize text-[var(--text-secondary)]">
-                              {task.priority}
-                            </span>
+                            {formatDueDate(task.due_date)}
                           </p>
-                          <p className="text-sm text-[var(--text-muted)]">
-                            Deadline:{" "}
-                            <span className="font-medium text-[var(--text-secondary)]">
-                              {formatDueDate(task.due_date)}
-                            </span>
-                          </p>
+                          {linkedEventsByTaskId[task.id]?.[0] ? (
+                            <p className="text-xs text-[var(--text-muted)]">
+                              Linked event: {linkedEventsByTaskId[task.id][0].title}
+                            </p>
+                          ) : null}
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold capitalize tracking-[0.08em] ${getStatusBadgeClass(task.status)}`}
-                          >
-                            {getTaskStatusLabel(task.status)}
-                          </span>
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold capitalize tracking-[0.08em] ${getPriorityBadgeClass(task.priority)}`}
                           >
                             {task.priority} priority
                           </span>
+                          {isTaskOverdueForDashboard(task, getTodayKey()) ? (
+                            <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950/50 dark:text-rose-200">
+                              Overdue
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_auto_auto] sm:items-center">
+                      <div className="grid gap-2 sm:grid-cols-[minmax(140px,170px)_auto] sm:items-center">
                         <select
-                          className="h-11 rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                          className="h-10 rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
                           onChange={(event) =>
                             handleStatusChange(task.id, event.target.value)
                           }
@@ -443,30 +1173,42 @@ function TasksPage({
                           <option value="completed">Completed</option>
                         </select>
 
-                        <Button
-                          className="w-full sm:w-auto"
-                          onClick={() => handleStartTaskEdit(task)}
-                          variant="secondary"
-                        >
-                          Edit
-                        </Button>
-
-                        <Button
-                          className="w-full sm:w-auto"
-                          onClick={() => handleDeleteTask(task.id)}
-                          variant="outline"
-                        >
-                          Delete
-                        </Button>
+                        <details className="relative">
+                          <summary className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] text-lg text-[var(--text-secondary)]">
+                            ...
+                          </summary>
+                          <div className="absolute right-0 z-10 mt-2 w-36 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-panel)] p-2 shadow-[var(--shadow-panel)]">
+                            <button
+                              className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-panel-soft)]"
+                              onClick={() => handleStartTaskEdit(task)}
+                              type="button"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-panel-soft)]"
+                              onClick={() => onDuplicateTask(task)}
+                              type="button"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              className="w-full rounded-xl px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              onClick={() => {
+                                if (window.confirm("Delete this task?")) {
+                                  handleDeleteTask(task.id);
+                                }
+                              }}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     </div>
                   )}
 
-                  <div className="rounded-2xl bg-[var(--bg-panel-soft)] px-4 py-3 text-sm text-[var(--text-muted)]">
-                    {(editingTaskId === task.id ? taskEditForm.due_date : task.due_date)
-                      ? "This task will appear on the Calendar page on its deadline date."
-                      : "Add a deadline if you want this task to appear on the Calendar page."}
-                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -474,7 +1216,7 @@ function TasksPage({
 
           {duplicateDeadlineGroups.length > 0 ? (
             <aside className="xl:sticky xl:top-6">
-              <section className="rounded-[22px] border border-[var(--border-soft)] bg-[var(--bg-panel)] px-4 py-4 shadow-[var(--shadow-panel)]">
+              <section className="rounded-[20px] border border-[var(--border-soft)] bg-[var(--bg-panel)] px-3.5 py-3.5 shadow-[var(--shadow-panel)]">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 rounded-full bg-[var(--bg-accent-soft)] p-2 text-[var(--text-accent)]">
                     <AlertCircle className="h-4 w-4" />
@@ -482,27 +1224,27 @@ function TasksPage({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                        Shared deadlines
+                        Deadline Groups
                       </h2>
                       <span className="rounded-full bg-[var(--bg-panel-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
                         {duplicateDeadlineGroups.length}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-                      More than one task is using the same day.
-                    </p>
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-3">
+                <div className="mt-3 space-y-2.5">
                   {duplicateDeadlineGroups.map(([dueDate, groupedTasks]) => (
-                    <div
-                      className="rounded-2xl bg-[var(--bg-panel-soft)] px-3 py-3"
+                    <details
+                      className="rounded-2xl bg-[var(--bg-panel-soft)] px-3 py-2.5"
                       key={dueDate}
                     >
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-accent)]">
-                        {formatDueDate(dueDate)}
-                      </p>
+                      <summary className="cursor-pointer list-none">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-accent)]">
+                          {formatDueDate(dueDate)} - {groupedTasks.length} task
+                          {groupedTasks.length === 1 ? "" : "s"}
+                        </p>
+                      </summary>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {groupedTasks.map((task) => (
                           <span
@@ -513,7 +1255,7 @@ function TasksPage({
                           </span>
                         ))}
                       </div>
-                    </div>
+                    </details>
                   ))}
                 </div>
               </section>
@@ -578,13 +1320,12 @@ function AddTaskPage({ error, onTaskCreated, tasks }) {
   );
 }
 
-function HomePage({ user, onLogout, onThemeToggle, theme }) {
+function HomePage({ authEntrySource, user, onLogout, onThemeToggle, theme }) {
   const [activeView, setActiveView] = useState("overview");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [dashboardCards, setDashboardCards] = useState([]);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedScope, setSelectedScope] = useState("my");
+  const [overviewRange, setOverviewRange] = useState("today");
   const [tasks, setTasks] = useState([]);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskEditForm, setTaskEditForm] = useState({
@@ -596,58 +1337,203 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
   const [editDeadlineWarning, setEditDeadlineWarning] = useState("");
   const [taskQuery, setTaskQuery] = useState("");
   const [taskStatusFilter, setTaskStatusFilter] = useState("all");
+  const [taskPriorityFilter, setTaskPriorityFilter] = useState("all");
+  const [taskDueFilter, setTaskDueFilter] = useState("all");
+  const [taskSort, setTaskSort] = useState("newest");
   const [events, setEvents] = useState([]);
-  const isMyScope = selectedScope === "my";
+  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const todayKey = getTodayKey();
+  const overviewRangeEndKey = getRangeEndKey(overviewRange, todayKey);
+  const weekEndKey = addDaysToDateKey(todayKey, 6);
   const filteredTasks = tasks
     .filter((task) =>
       task.title.toLowerCase().includes(taskQuery.trim().toLowerCase())
     )
+    .filter((task) => {
+      if (taskStatusFilter === "all") {
+        return true;
+      }
+
+      if (taskStatusFilter === "overdue") {
+        return isTaskOverdueForDashboard(task, todayKey);
+      }
+
+      return task.status === taskStatusFilter;
+    })
     .filter((task) =>
-      taskStatusFilter === "all" ? true : task.status === taskStatusFilter
+      taskPriorityFilter === "all" ? true : task.priority === taskPriorityFilter
+    )
+    .filter((task) => {
+      const dueDateKey = getDateKey(task.due_date);
+
+      if (taskDueFilter === "all") {
+        return true;
+      }
+
+      if (taskDueFilter === "today") {
+        return dueDateKey === todayKey;
+      }
+
+      if (taskDueFilter === "week") {
+        return isDateInRange(dueDateKey, todayKey, weekEndKey);
+      }
+
+      if (taskDueFilter === "overdue") {
+        return Boolean(dueDateKey && dueDateKey < todayKey);
+      }
+
+      if (taskDueFilter === "none") {
+        return !dueDateKey;
+      }
+
+      return true;
+    })
+    .sort((firstTask, secondTask) => {
+      if (taskSort === "oldest") {
+        return (
+          new Date(firstTask.created_at || 0).getTime() -
+          new Date(secondTask.created_at || 0).getTime()
+        );
+      }
+
+      if (taskSort === "due-date") {
+        return compareTasksByDeadline(firstTask, secondTask);
+      }
+
+      if (taskSort === "priority") {
+        return (
+          getPriorityRank(firstTask.priority) - getPriorityRank(secondTask.priority)
+        );
+      }
+
+      return (
+        new Date(secondTask.created_at || 0).getTime() -
+        new Date(firstTask.created_at || 0).getTime()
+      );
+    });
+  const rangeTasks = tasks
+    .filter((task) => {
+      const dueDateKey = getDateKey(task.due_date);
+
+      return isDateInRange(dueDateKey, todayKey, overviewRangeEndKey);
+    })
+    .sort(compareTasksByDeadline);
+  const overviewTasks = rangeTasks
+    .filter((task) => task.status !== "completed")
+    .slice(0, 5);
+  const upcomingItems = [
+    ...tasks
+      .filter((task) => {
+        const dueDateKey = getDateKey(task.due_date);
+
+        return (
+          dueDateKey &&
+          dueDateKey > (overviewRangeEndKey ?? todayKey) &&
+          task.status !== "completed"
+        );
+      })
+      .map((task) => ({
+        key: `task-${task.id}`,
+        kind: "task",
+        title: task.title,
+        when: formatDueDate(task.due_date),
+        sortAt: new Date(`${getDateKey(task.due_date)}T00:00:00`).getTime(),
+        source: task,
+      })),
+    ...events
+      .filter((event) => normalizeDateKey(event.start_at) > (overviewRangeEndKey ?? todayKey))
+      .map((event) => ({
+        key: `event-${event.id}`,
+        kind: "event",
+        title: event.title,
+        when: formatEventDateLabel(event),
+        sortAt: new Date(event.start_at).getTime(),
+        source: event,
+      })),
+  ]
+    .sort((firstItem, secondItem) => firstItem.sortAt - secondItem.sortAt)
+    .slice(0, 5);
+  const urgentOverviewTasks = overviewTasks
+    .filter((task) => task.priority === "high")
+    .slice(0, 3);
+  const progressSummary = {
+    completed: rangeTasks.filter((task) => task.status === "completed").length,
+    inProgress: rangeTasks.filter((task) => task.status === "in-progress").length,
+    pending: rangeTasks.filter((task) => task.status === "pending").length,
+  };
+  const selectedRangeLabel =
+    overviewRange === "today"
+      ? "Today"
+      : overviewRange === "week"
+        ? "This Week"
+        : overviewRange === "month"
+          ? "This Month"
+          : "All Time";
+  const summaryCards = [
+    {
+      title: overviewRange === "all" ? "Total Tasks" : `Tasks ${selectedRangeLabel}`,
+      value: rangeTasks.length,
+    },
+    {
+      title:
+        overviewRange === "all"
+          ? "Completed Tasks"
+          : `Completed ${selectedRangeLabel}`,
+      value: `${progressSummary.completed} - ${
+        rangeTasks.length === 0
+          ? 0
+          : Math.round((progressSummary.completed / rangeTasks.length) * 100)
+      }%`,
+    },
+    {
+      title:
+        overviewRange === "all"
+          ? "Pending Tasks"
+          : `Pending ${selectedRangeLabel}`,
+      value: progressSummary.pending,
+    },
+    {
+      title:
+        overviewRange === "all"
+          ? "In Progress Tasks"
+          : `In Progress ${selectedRangeLabel}`,
+      value: progressSummary.inProgress,
+    },
+  ];
+  const weeklyTasks = tasks
+    .filter((task) =>
+      isDateInRange(getDateKey(task.due_date), todayKey, addDaysToDateKey(todayKey, 6))
     )
     .sort(compareTasksByDeadline);
-  const dueTodayTasks = tasks
-    .filter((task) => {
-      const dueDateKey = getDateKey(task.due_date);
+  const weeklyStats = {
+    completed: weeklyTasks.filter((task) => task.status === "completed").length,
+    pending: weeklyTasks.filter((task) => task.status !== "completed").length,
+    completionPercent:
+      weeklyTasks.length === 0
+        ? 0
+        : Math.round(
+            (weeklyTasks.filter((task) => task.status === "completed").length /
+              weeklyTasks.length) *
+              100
+          ),
+  };
+  const priorityBreakdown = {
+    high: rangeTasks.filter((task) => task.priority === "high").length,
+    medium: rangeTasks.filter((task) => task.priority === "medium").length,
+    low: rangeTasks.filter((task) => task.priority === "low").length,
+  };
+  const recentActivity = buildRecentActivity(tasks, events);
 
-      return dueDateKey === todayKey && task.status !== "completed";
-    })
-    .sort(compareTasksByDeadline)
-    .slice(0, 5);
-  const upcomingTasks = tasks
-    .filter((task) => {
-      const dueDateKey = getDateKey(task.due_date);
-
-      return dueDateKey && dueDateKey > todayKey && task.status !== "completed";
-    })
-    .sort(compareTasksByDeadline)
-    .slice(0, 3);
-
-  async function fetchDashboardCards(scope = selectedScope) {
-    const cards = await getDashboardData({
-      scope,
-      userId: user.id,
-    });
-
-    setDashboardCards(cards);
-  }
-
-  async function fetchOverviewData(scope = selectedScope) {
+  async function fetchOverviewData() {
     try {
       setIsLoading(true);
       setError("");
 
-      const [cards, savedTasks, savedEvents] = await Promise.all([
-        getDashboardData({
-          scope,
-          userId: user.id,
-        }),
+      const [savedTasks, savedEvents] = await Promise.all([
         getTasks(user.id),
         getEvents(user.id),
       ]);
 
-      setDashboardCards(cards);
       setTasks(savedTasks);
       setEvents(savedEvents);
     } catch (err) {
@@ -661,13 +1547,13 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     try {
       setError("");
 
-      const newTask = await createTask({
+      await createTask({
         ...taskData,
         userId: user.id,
       });
 
-      setTasks((currentTasks) => [...currentTasks, newTask]);
-      await fetchDashboardCards();
+      const savedTasks = await getTasks(user.id);
+      setTasks(savedTasks);
       return true;
     } catch (err) {
       setError(err.message);
@@ -745,7 +1631,6 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
 
       setTasks(savedTasks);
       setEvents(savedEvents);
-      await fetchDashboardCards();
     } catch (err) {
       setError(err.message);
     }
@@ -760,7 +1645,6 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
       setTasks((currentTasks) =>
         currentTasks.map((task) => (task.id === taskId ? updatedTask : task))
       );
-      await fetchDashboardCards();
     } catch (err) {
       setError(err.message);
     }
@@ -772,6 +1656,16 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     setTaskEditForm(getTaskFormValues(task));
     setEditDeadlineWarning("");
     setError("");
+  }
+
+  async function handleTaskCreatedFromDialog(taskData) {
+    const wasCreated = await handleTaskCreated(taskData);
+
+    if (wasCreated) {
+      setIsTaskDialogOpen(false);
+    }
+
+    return wasCreated;
   }
 
   function handleCancelTaskEdit() {
@@ -789,6 +1683,9 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     handleCancelTaskEdit();
     setTaskQuery("");
     setTaskStatusFilter("all");
+    setTaskPriorityFilter("all");
+    setTaskDueFilter("all");
+    setTaskSort("newest");
   }
 
   function handleTaskEditChange(field, value) {
@@ -814,7 +1711,6 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     );
     setEditingTaskId(null);
     setEditDeadlineWarning("");
-    await fetchDashboardCards();
   }
 
   async function handleSaveTaskEdit(taskId) {
@@ -847,7 +1743,18 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
   async function handleConfirmTaskEditSave(taskId) {
     try {
       setError("");
-      await saveTaskEdit(taskId);
+      const updatedTask = await updateTask(taskId, {
+        ...taskEditForm,
+        userId: user.id,
+        due_date: taskEditForm.due_date || null,
+        allowSharedDeadline: true,
+      });
+
+      setTasks((currentTasks) =>
+        currentTasks.map((task) => (task.id === taskId ? updatedTask : task))
+      );
+      setEditingTaskId(null);
+      setEditDeadlineWarning("");
     } catch (err) {
       setError(err.message);
     }
@@ -858,11 +1765,7 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
 
     async function loadInitialOverviewData() {
       try {
-        const [cards, savedTasks, savedEvents] = await Promise.all([
-          getDashboardData({
-            scope: "my",
-            userId: user.id,
-          }),
+        const [savedTasks, savedEvents] = await Promise.all([
           getTasks(user.id),
           getEvents(user.id),
         ]);
@@ -871,7 +1774,6 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
           return;
         }
 
-        setDashboardCards(cards);
         setTasks(savedTasks);
         setEvents(savedEvents);
         setError("");
@@ -893,14 +1795,13 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     };
   }, [user.id]);
 
-  async function handleScopeChange(event) {
-    const nextScope = event.target.value;
-    setSelectedScope(nextScope);
-    await fetchOverviewData(nextScope);
-  }
+  useEffect(() => {
+    if (activeView === "events") {
+      setIsSidebarVisible(true);
+    }
+  }, [activeView]);
 
   function handleCalendarTaskSelect(task) {
-    setSelectedScope("my");
     handleStartTaskEdit(task);
   }
 
@@ -913,7 +1814,6 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
   }
 
   function handleSummaryCardClick(title) {
-    setSelectedScope("my");
     setTaskQuery("");
 
     if (title.toLowerCase().includes("completed")) {
@@ -929,108 +1829,148 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
     setActiveView("tasks");
   }
 
-  return (
-    <div className="min-h-screen bg-[var(--bg-app)] px-5 py-6 sm:px-8 lg:px-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-4 flex items-center">
-          <button
-            aria-label={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] shadow-[var(--shadow-panel)] transition hover:bg-[var(--bg-accent-soft)] hover:text-[var(--text-accent)]"
-            onClick={() => setIsSidebarOpen((current) => !current)}
-            type="button"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-            Navigation
-          </button>
-        </div>
+  function handleStartEventWorkspace() {
+    setActiveView("events");
+  }
 
-        <div className="flex flex-col gap-6 xl:flex-row">
-          {isSidebarOpen ? (
+  async function handleDuplicateTask(task) {
+    try {
+      setError("");
+      await createTask({
+        title: `${task.title} Copy`,
+        description: task.description ?? "",
+        priority: task.priority,
+        status: task.status,
+        due_date: task.due_date || null,
+        userId: user.id,
+      });
+
+      const savedTasks = await getTasks(user.id);
+      setTasks(savedTasks);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-app)] px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-4 flex justify-start">
+          <Button
+            className="gap-2"
+            onClick={() => setIsSidebarVisible((visible) => !visible)}
+            size="sm"
+            variant="secondary"
+          >
+            {isSidebarVisible ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4" />
+            )}
+            Navigation
+          </Button>
+        </div>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          {isSidebarVisible ? (
             <Sidebar
               activeView={activeView}
               onLogout={onLogout}
-              onSidebarClose={() => setIsSidebarOpen(false)}
               onThemeToggle={onThemeToggle}
-              onViewChange={handleViewChange}
+              onViewChange={setActiveView}
               theme={theme}
               user={user}
             />
           ) : null}
 
-        <main className="flex-1 space-y-6">
-          {activeView === "calendar" || activeView === "add-event" ? (
-            <CalendarPage
-              entryMode={activeView === "add-event" ? "create-event" : "browse"}
-              error={error}
-              events={events}
-              onEventCreate={handleEventCreated}
-              onEventDelete={handleEventDeleted}
-              onEventUpdate={handleEventUpdated}
-              onTaskSelect={handleCalendarTaskSelect}
-              tasks={tasks}
-              user={user}
-            />
-          ) : activeView === "tasks" ? (
-            <TasksPage
-              allTasks={tasks}
-              editDeadlineWarning={editDeadlineWarning}
-              activeStatusFilter={taskStatusFilter}
-              editingTaskId={editingTaskId}
-              error={error}
-              handleConfirmTaskEditSave={handleConfirmTaskEditSave}
-              handleCancelTaskEdit={handleCancelTaskEdit}
-              handleDeleteTask={handleDeleteTask}
-              handleSaveTaskEdit={handleSaveTaskEdit}
-              handleStartTaskEdit={handleStartTaskEdit}
-              handleStatusChange={handleStatusChange}
-              handleTaskEditChange={handleTaskEditChange}
-              onStatusFilterChange={setTaskStatusFilter}
-              onTaskQueryChange={setTaskQuery}
-              taskQuery={taskQuery}
-              taskEditForm={taskEditForm}
-              tasks={filteredTasks}
-            />
-          ) : activeView === "add-task" ? (
-            <AddTaskPage
-              error={error}
-              onTaskCreated={handleTaskCreated}
-              tasks={tasks}
-            />
-          ) : (
-            <>
-              <section className="rounded-[26px] border border-[var(--border-soft)] bg-[var(--bg-panel)] p-5 shadow-[var(--shadow-panel)] backdrop-blur-xl sm:p-6">
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="space-y-3">
-                    <div className="inline-flex rounded-full bg-[var(--bg-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-accent)]">
-                      {selectedScope === "my" ? "My stats" : "Global stats"}
-                    </div>
-                    <div>
-                      <h1 className="text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
-                        Welcome back, {user.name}
+          <main className="min-w-0 flex-1 space-y-6">
+            {activeView === "calendar" || activeView === "add-event" || activeView === "events" ? (
+              <CalendarPage
+                entryMode={
+                  activeView === "add-event"
+                    ? "create-event"
+                    : activeView === "events"
+                      ? "events"
+                      : "browse"
+                }
+                error={error}
+                events={events}
+                onEventCreate={handleEventCreated}
+                onEventDelete={handleEventDeleted}
+                onEventUpdate={handleEventUpdated}
+                isSidebarVisible={isSidebarVisible}
+                onSidebarToggle={() =>
+                  setIsSidebarVisible((visible) => !visible)
+                }
+                onTaskSelect={handleCalendarTaskSelect}
+                tasks={tasks}
+                user={user}
+              />
+            ) : activeView === "tasks" ? (
+              <TasksPage
+                allTasks={tasks}
+                editDeadlineWarning={editDeadlineWarning}
+                activeStatusFilter={taskStatusFilter}
+                editingTaskId={editingTaskId}
+                error={error}
+                events={events}
+                onOpenAddTask={() => setIsTaskDialogOpen(true)}
+                onDuplicateTask={handleDuplicateTask}
+                onClearFilters={resetTaskWorkspaceState}
+                onDueFilterChange={setTaskDueFilter}
+                onPriorityFilterChange={setTaskPriorityFilter}
+                onSortChange={setTaskSort}
+                handleConfirmTaskEditSave={handleConfirmTaskEditSave}
+                handleCancelTaskEdit={handleCancelTaskEdit}
+                handleDeleteTask={handleDeleteTask}
+                handleSaveTaskEdit={handleSaveTaskEdit}
+                handleStartTaskEdit={handleStartTaskEdit}
+                handleStatusChange={handleStatusChange}
+                handleTaskEditChange={handleTaskEditChange}
+                onStatusFilterChange={setTaskStatusFilter}
+                onTaskQueryChange={setTaskQuery}
+                taskDueFilter={taskDueFilter}
+                taskPriorityFilter={taskPriorityFilter}
+                taskQuery={taskQuery}
+                taskSort={taskSort}
+                taskEditForm={taskEditForm}
+                tasks={filteredTasks}
+              />
+            ) : activeView === "add-task" ? (
+              <AddTaskPage
+                error={error}
+                onTaskCreated={handleTaskCreated}
+                tasks={tasks}
+              />
+            ) : (
+              <>
+                <section className="rounded-[22px] border border-[var(--border-soft)] bg-[var(--bg-panel)] px-4 py-3 shadow-[var(--shadow-panel)]">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-1">
+                      <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+                        Overview
                       </h1>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-                        Keep things simple: check today&apos;s tasks, then open
-                        the section you need.
+                      <p className="text-sm text-[var(--text-muted)]">
+                        Here's what's happening today.
                       </p>
                     </div>
-                  </div>
 
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <select
-                      className="h-11 rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
-                      onChange={handleScopeChange}
-                      value={selectedScope}
-                    >
-                      <option value="my">My Stats</option>
-                      <option value="global">Global Stats</option>
-                    </select>
-                    <Button className="gap-2" onClick={() => fetchOverviewData()}>
-                      <RefreshCcw className="h-4 w-4" />
-                      Refresh data
-                    </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <select
+                        className="h-10 rounded-2xl border border-[var(--border-muted)] bg-[var(--bg-panel-strong)] px-4 text-sm text-[var(--text-secondary)] shadow-sm outline-none transition focus:border-[var(--border-accent)] focus:ring-4 focus:ring-[var(--ring-accent)]"
+                        onChange={(event) => setOverviewRange(event.target.value)}
+                        value={overviewRange}
+                      >
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="all">All Time</option>
+                      </select>
+                      <Button onClick={() => fetchOverviewData()} size="sm" variant="secondary">
+                        Refresh
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
 
               {error && (
                 <div className="rounded-2xl border border-red-200 bg-[var(--bg-danger-soft)] px-4 py-3 text-sm text-red-700 dark:text-red-200">
@@ -1038,148 +1978,107 @@ function HomePage({ user, onLogout, onThemeToggle, theme }) {
                 </div>
               )}
 
-              {isMyScope ? (
-                <>
-                  <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <SimpleTaskList
-                      emptyMessage="Nothing is due today."
-                      onTaskClick={handleStartTaskEdit}
-                      tasks={dueTodayTasks}
-                      title="Due today"
-                    />
-                    <SimpleTaskList
-                      emptyMessage="No upcoming deadlines."
-                      onTaskClick={handleStartTaskEdit}
-                      tasks={upcomingTasks}
-                      title="Next"
-                    />
-                  </section>
-
-                  <section className="space-y-4">
-                    <div>
-                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                        Go to
-                      </h2>
-                      <p className="text-sm text-[var(--text-muted)]">
-                        Choose one section.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <ActionBox
-                      description="Open your task list."
-                      icon={ListTodo}
-                      onClick={() => setActiveView("tasks")}
-                      title="My Tasks"
-                    />
-                    <ActionBox
-                      description="Create a task."
-                      icon={Plus}
-                      onClick={() => setActiveView("add-task")}
-                      title="Add Task"
-                    />
-                      <ActionBox
-                        description="Create a scheduled event."
-                        icon={CalendarDays}
-                        onClick={() => setActiveView("add-event")}
-                        title="Add Event"
-                      />
-                      <ActionBox
-                        description="See deadlines and scheduled events."
-                        icon={CalendarDays}
-                        onClick={() => setActiveView("calendar")}
-                        title="Calendar"
-                      />
-                    </div>
-                  </section>
-
-                  <section className="space-y-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                        Summary
-                      </h2>
-                      <p className="text-sm text-[var(--text-muted)]">
-                        Press a box to open the related tasks.
-                      </p>
-                    </div>
-
-                    {isLoading ? (
-                      <Card className="bg-white/75">
-                        <CardContent className="p-6 text-sm text-[var(--text-muted)]">
-                          Loading dashboard data...
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        {dashboardCards.map((card) => (
-                          <DashboardCard
-                            key={card.title}
-                            onClick={() => handleSummaryCardClick(card.title)}
-                            title={card.title}
-                            value={card.value}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </>
-              ) : (
-                <section className="space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-[var(--text-primary)]">
-                      Global Dashboard Access
-                    </h2>
-                    <p className="text-sm leading-6 text-[var(--text-muted)]">
-                      Global Stats is a read-only overview. Task creation and
-                      editing live in My Stats.
-                    </p>
-                  </div>
-
+              <section className="space-y-3">
+                {isLoading ? (
                   <Card className="bg-white/75">
-                    <CardContent className="p-6 text-sm leading-6 text-[var(--text-muted)]">
-                      Switch back to{" "}
-                      <span className="font-medium text-[var(--text-secondary)]">
-                        My Stats
-                      </span>{" "}
-                      to manage your own tasks.
+                    <CardContent className="p-5 text-sm text-[var(--text-muted)]">
+                      Loading...
                     </CardContent>
                   </Card>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {summaryCards.map((card) => (
+                      <DashboardCard
+                        key={card.title}
+                        onClick={() => handleSummaryCardClick(card.title)}
+                        title={card.title}
+                        value={card.value}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
 
-                  <section className="space-y-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                        Summary
-                      </h2>
-                      <p className="text-sm text-[var(--text-muted)]">
-                        A quick view of activity across all users and tasks.
-                      </p>
-                    </div>
+              <section className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_300px] lg:items-start">
+                <div className="space-y-3">
+                  <TodayFocusPanel
+                    onTaskClick={handleStartTaskEdit}
+                    onStatusChange={handleStatusChange}
+                    progressSummary={progressSummary}
+                    rangeLabel={
+                      overviewRange === "today"
+                        ? "Tasks due today and their current status."
+                        : overviewRange === "week"
+                          ? "Tasks due this week and the most urgent ones."
+                          : overviewRange === "month"
+                            ? "Tasks due this month and the most urgent ones."
+                            : "All tasks in your dashboard and the most urgent ones."
+                    }
+                    tasks={overviewTasks}
+                    urgentTasks={urgentOverviewTasks}
+                  />
 
-                    {isLoading ? (
-                      <Card className="bg-white/75">
-                        <CardContent className="p-6 text-sm text-[var(--text-muted)]">
-                          Loading dashboard data...
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        {dashboardCards.map((card) => (
-                          <DashboardCard
-                            key={card.title}
-                            title={card.title}
-                            value={card.value}
-                          />
-                        ))}
+                  <SmallInsightCard
+                    subtitle="Completed, pending, and progress for the next 7 days."
+                    title="Weekly Progress"
+                  >
+                    <div
+                      className={
+                        weeklyStats.completionPercent === 0 ? "space-y-2" : "space-y-3"
+                      }
+                    >
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-[var(--text-muted)]">Completed</span>
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {weeklyStats.completed}
+                        </span>
                       </div>
-                    )}
-                  </section>
-                </section>
-              )}
-            </>
-          )}
-        </main>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-[var(--text-muted)]">Still pending</span>
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {weeklyStats.pending}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between text-xs text-[var(--text-muted)]">
+                          <span>Completion</span>
+                          <span>{weeklyStats.completionPercent}%</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-panel-soft)]">
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${weeklyStats.completionPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </SmallInsightCard>
+                </div>
+
+                <div className="space-y-3">
+                  <UpcomingPanel
+                    emptyMessage="No upcoming tasks or events."
+                    items={upcomingItems}
+                    onEventClick={handleStartEventWorkspace}
+                    onTaskClick={handleStartTaskEdit}
+                  />
+
+                  <RecentActivityCard activities={recentActivity} />
+                </div>
+              </section>
+              </>
+            )}
+          </main>
         </div>
       </div>
+      {isTaskDialogOpen ? (
+        <ModalShell onClose={() => setIsTaskDialogOpen(false)} title="Add Task">
+          <TaskForm
+            existingTasks={tasks}
+            onTaskCreated={handleTaskCreatedFromDialog}
+          />
+        </ModalShell>
+      ) : null}
     </div>
   );
 }

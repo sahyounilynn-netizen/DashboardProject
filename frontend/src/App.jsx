@@ -24,6 +24,7 @@ function normalizeUser(user) {
 }
 
 function App() {
+  const [authEntrySource, setAuthEntrySource] = useState(null);
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = window.localStorage.getItem(USER_STORAGE_KEY);
 
@@ -63,16 +64,18 @@ function App() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  function handleAuthenticated(user) {
+  function handleAuthenticated(user, entrySource = "login") {
     const normalizedUser = normalizeUser(user);
 
     if (!normalizedUser) {
       window.localStorage.removeItem(USER_STORAGE_KEY);
       setCurrentUser(null);
+      setAuthEntrySource(null);
       return;
     }
 
     setCurrentUser(normalizedUser);
+    setAuthEntrySource(entrySource);
     window.localStorage.setItem(
       USER_STORAGE_KEY,
       JSON.stringify(normalizedUser)
@@ -81,6 +84,7 @@ function App() {
 
   function handleLogout() {
     setCurrentUser(null);
+    setAuthEntrySource(null);
     window.localStorage.removeItem(USER_STORAGE_KEY);
   }
 
@@ -100,6 +104,7 @@ function App() {
 
   return (
     <HomePage
+      authEntrySource={authEntrySource}
       onLogout={handleLogout}
       onThemeToggle={handleThemeToggle}
       theme={theme}
